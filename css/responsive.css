@@ -1,0 +1,28 @@
+/* Anpassungen für sehr schmale und für breite Bildschirme. */
+
+@media (max-width: 359px) {
+  .nav__item {
+    font-size: 0.6875rem;
+  }
+
+  .home__note {
+    font-size: var(--text-lg);
+  }
+}
+
+@media (min-width: 600px) {
+  .nav {
+    left: 50%;
+    right: auto;
+    width: 560px;
+    transform: translateX(-50%);
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+  }
+
+  .app {
+    min-height: 100vh;
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+  }
+}

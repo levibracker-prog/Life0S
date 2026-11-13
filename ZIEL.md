@@ -68,7 +68,9 @@ Aktueller Stand:
 
 	•	Schritt 1 (Planung): erledigt und freigegeben (Notizbuch-Design mit Terrakotta, Altersfrage im Onboarding, ein Server, Mini-Produkt zuerst).
 	•	Zusatzwunsch des Nutzers: Das Ergebnis soll wirken, als hätte es ein traditioneller Entwickler von Hand gebaut, nicht wie KI-Ware (siehe QUALITAET.md, Abschnitt 8).
-	•	Nächster Schritt: Schritt 2 (Grundgerüst).
+	•	Schritt 2 (Grundgerüst): umgesetzt und geprüft. Vorhanden: index.html, Design-Tokens mit Hell/Dunkel, Bottom-Navigation (Agent in der Mitte, übrige Reihenfolge änderbar), Seitenwechsel, Profil mit Darstellung/Alter/Export/Import/Löschen, Speicher mit Versionen, Migration und Backup, Store mit Rückgängig, Altersfrage, Tagesnotiz (bisher nur Leer-Zustand). 19 Unit-Tests und ein Browser-Durchlauf (360/390/430 px, hell/dunkel) bestanden, Kontraste gemessen. Noch nicht geprüft: echtes iPhone/Android, Safari, Offline mit Service Worker (kommt mit Schritt 7).
+	•	Bekannte Abweichungen: Navigation lässt sich nur umordnen, nicht neu belegen. Ränder von Bedienelementen liegen unter 3:1 (siehe npm run kontrast). Datei- und Ordnerlayout wie in docs/ARCHITEKTUR.md, mit tools/dev-server.mjs als Übergang bis zum Backend.
+	•	Nächster Schritt: Schritt 3 (Widget-Engine und Dashboard).
 
 9. Entscheidungsfilter
 
