@@ -1,0 +1,13 @@
+{
+  "name": "lifeos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Persönliches Betriebssystem für den Alltag, als Mobile-Web-App.",
+  "scripts": {
+    "start": "node tools/dev-server.mjs",
+    "test": "node --test tests/*.test.js",
+    "kontrast": "node tools/kontrast.mjs"
+  },
+  "engines": { "node": ">=20" }
+}

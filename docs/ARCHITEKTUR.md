@@ -1,6 +1,6 @@
 ARCHITEKTUR.md – LifeOS Planung (Schritt 1)
 
-Status: Entwurf zur Freigabe. Gehört später nach docs/ARCHITEKTUR.md.
+Status: freigegeben (Schritt 1). Liegt in docs/ARCHITEKTUR.md.
 Es wurde noch nichts davon getestet, denn es ist reine Planung.
 
 1. Designkonzept
