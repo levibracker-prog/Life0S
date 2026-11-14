@@ -65,23 +65,23 @@
   --pattern-line: color-mix(in srgb, var(--ink) 6%, transparent);
   --pattern-image: none;
   --pattern-size: auto;
-  --sheet-mix: 96%;
+  --sheet-mix: 90%;
   --photo-dim: 0.35;
 }
 
-:root[data-pattern='grid'] {
+[data-pattern='grid'] {
   --pattern-image:
     linear-gradient(var(--pattern-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--pattern-line) 1px, transparent 1px);
   --pattern-size: 24px 24px;
 }
 
-:root[data-pattern='lined'] {
+[data-pattern='lined'] {
   --pattern-image: linear-gradient(var(--pattern-line) 1px, transparent 1px);
   --pattern-size: 100% 28px;
 }
 
-:root[data-pattern='dots'] {
+[data-pattern='dots'] {
   --pattern-image: radial-gradient(circle at 1px 1px, var(--pattern-line) 1.2px, transparent 1.6px);
   --pattern-size: 20px 20px;
 }
@@ -125,8 +125,6 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   background-color: var(--paper);
-  background-image: var(--pattern-image);
-  background-size: var(--pattern-size);
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: var(--text-md);
@@ -135,7 +133,8 @@ body {
   overscroll-behavior-y: none;
 }
 
-/* Foto: feste Ebene hinter der App, darüber eine Abdunklung. */
+/* Hintergrund: feste Ebene hinter der App, Verlauf oder Foto. Beim Foto
+   liegt darüber eine Abdunklung. */
 .backdrop {
   position: fixed;
   inset: 0;
@@ -144,20 +143,11 @@ body {
   background-size: cover;
 }
 
-.backdrop::after {
+:root[data-photo] .backdrop::after {
   content: '';
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, var(--photo-dim));
-}
-
-:root:not([data-photo]) .backdrop {
-  display: none;
-}
-
-:root[data-photo] body {
-  background-image: none;
-  background-color: transparent;
 }
 
 h1,

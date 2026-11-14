@@ -2,8 +2,9 @@
 // eigenen Sammlungen hier oder über registry.addModule.
 
 import {
-  ACCENTS, AGE_GROUPS, DENSITIES, DIM_MAX, DIM_MIN, FONT_SCALES, IMAGE_MAX_DATAURL_CHARS,
-  MOVABLE_SCREENS, PAPERS, PATTERNS, THEMES,
+  ACCENTS, AGE_GROUPS, DENSITIES, DIM_MAX, DIM_MIN, FONT_SCALES, GRADIENT_MAX_COLORS,
+  GRADIENT_MIN_COLORS, GRADIENT_TYPES, IMAGE_MAX_DATAURL_CHARS, MAX_DESIGNS, MOVABLE_SCREENS,
+  PAPERS, PATTERNS,
 } from '../config.js';
 
 const isoTime = { type: 'string', max: 40, min: 10 };
@@ -16,23 +17,57 @@ const accent = {
   pattern: new RegExp(`^(${ACCENTS.map((a) => a.id).join('|')}|#[0-9a-fA-F]{6})$`),
 };
 
-const paperIds = [...new Set([...PAPERS.light, ...PAPERS.dark].map((p) => p.id))];
 const paper = {
   type: 'string',
   max: 12,
   // Vorgabe-ID oder frei gewählte Farbe im Format #rrggbb
-  pattern: new RegExp(`^(${paperIds.join('|')}|#[0-9a-fA-F]{6})$`),
+  pattern: new RegExp(`^(${PAPERS.map((p) => p.id).join('|')}|#[0-9a-fA-F]{6})$`),
 };
+
+const gradient = {
+  type: 'object',
+  required: ['type', 'angle', 'colors'],
+  props: {
+    type: { type: 'string', enum: GRADIENT_TYPES.map((t) => t.id) },
+    angle: { type: 'number', integer: true, min: 0, max: 360 },
+    colors: {
+      type: 'array',
+      min: GRADIENT_MIN_COLORS,
+      max: GRADIENT_MAX_COLORS,
+      items: { type: 'string', pattern: /^#[0-9a-fA-F]{6}$/ },
+    },
+  },
+};
+
+const pattern = { type: 'string', enum: PATTERNS.map((p) => p.id) };
 
 const background = {
   type: 'object',
-  required: ['paperLight', 'paperDark', 'pattern', 'usePhoto', 'dim'],
+  required: ['gradient', 'paper', 'pattern', 'usePhoto', 'dim'],
   props: {
-    paperLight: paper,
-    paperDark: paper,
-    pattern: { type: 'string', enum: PATTERNS.map((p) => p.id) },
+    gradient,
+    paper,
+    pattern,
     usePhoto: { type: 'boolean' },
     dim: { type: 'number', integer: true, min: DIM_MIN, max: DIM_MAX },
+  },
+};
+
+// Ein Design bündelt Hintergrund ohne Foto und Akzentfarbe.
+const design = {
+  type: 'object',
+  required: ['v', 'id', 'name', 'createdAt', 'accent', 'background'],
+  props: {
+    v: { type: 'number', integer: true, min: 1 },
+    id,
+    name: { type: 'string', min: 1, max: 40 },
+    createdAt: isoTime,
+    accent,
+    background: {
+      type: 'object',
+      required: ['gradient', 'paper', 'pattern'],
+      props: { gradient, paper, pattern },
+    },
   },
 };
 
@@ -49,10 +84,9 @@ export const SCHEMAS = {
   },
   settings: {
     type: 'object',
-    required: ['v', 'theme', 'accent', 'density', 'fontScale', 'navItems', 'enabledModules', 'reminders', 'background'],
+    required: ['v', 'accent', 'density', 'fontScale', 'navItems', 'enabledModules', 'reminders', 'background'],
     props: {
       v: { type: 'number', integer: true, min: 1 },
-      theme: { type: 'string', enum: THEMES.map((t) => t.id) },
       accent,
       density: { type: 'string', enum: DENSITIES.map((d) => d.id) },
       fontScale: { type: 'number', enum: FONT_SCALES.map((f) => f.id) },
@@ -63,8 +97,12 @@ export const SCHEMAS = {
       enabledModules: { type: 'array', max: 50, items: id },
       reminders: { type: 'array', max: 200, items: { type: 'object', props: {}, loose: true } },
       background,
+      // Werte aus Schema 2, die die Migration auf Schema 3 nicht mehr braucht,
+      // aber aufhebt, damit nichts verloren geht.
+      migrated: { type: 'object', props: {}, loose: true },
     },
   },
+  designs: { type: 'array', max: MAX_DESIGNS, items: design },
   // Das Foto liegt getrennt von settings, damit jede Einstellungsänderung
   // nicht das ganze Bild neu schreibt.
   backgroundImage: {
@@ -109,4 +147,10 @@ export const SCHEMAS = {
 
 // Sammlungen, die in Export und Import landen. Das Rückgängig-Protokoll
 // bleibt bewusst draußen: Es gehört zum Gerät, nicht zu den Daten.
-export const EXPORTED = ['meta', 'settings', 'backgroundImage', 'dashboard'];
+export const EXPORTED = ['meta', 'settings', 'backgroundImage', 'designs', 'dashboard'];
+
+// Ab welcher Schema-Version es die Sammlung gibt. Ältere Exportdateien dürfen
+// sie nicht enthalten, die Migration legt dann den Standardwert an.
+export const COLLECTION_SINCE = {
+  meta: 1, settings: 1, dashboard: 1, backgroundImage: 2, designs: 3,
+};

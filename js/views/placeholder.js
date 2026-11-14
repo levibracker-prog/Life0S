@@ -12,13 +12,6 @@ export function renderPlaceholder({ title, lead, emptyTitle, emptyText }) {
       h('p', { class: 'empty__text' }, emptyText)));
 }
 
-export const explore = () => renderPlaceholder({
-  title: 'Explore',
-  lead: 'Module und Widgets, die du einschalten kannst.',
-  emptyTitle: 'Noch keine Module eingebaut',
-  emptyText: 'Habits, Aufgaben, Ziele und Ernährung folgen. Jedes läuft allein und lässt sich ein- und ausschalten.',
-});
-
 export const agent = () => renderPlaceholder({
   title: 'Agent',
   lead: 'Sag, was sich in der App ändern soll.',

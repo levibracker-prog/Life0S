@@ -7,14 +7,15 @@ import { renderNav } from './ui/nav.js';
 import { askAgeGroup } from './ui/dialog.js';
 import { h } from './ui/dom.js';
 import { showToast } from './ui/toast.js';
-import { applyAppearance, watchSystemTheme } from './ui/theme.js';
+import { applyAppearance } from './ui/theme.js';
 import { renderHome } from './views/home.js';
+import { renderExplore } from './views/explore.js';
 import { renderProfile } from './views/profile.js';
 import * as placeholders from './views/placeholder.js';
 
 const VIEWS = {
   home: renderHome,
-  explore: placeholders.explore,
+  explore: renderExplore,
   agent: placeholders.agent,
   progress: placeholders.progress,
   profile: renderProfile,
@@ -22,7 +23,7 @@ const VIEWS = {
 
 const storage = createStorage();
 const store = createStore(storage);
-const ctx = { store, storage };
+const ctx = { store, storage, rerender: () => render() };
 
 const root = document.getElementById('app');
 let navHost;
@@ -89,7 +90,6 @@ async function start() {
     render({ animate: event.kind === 'load' });
     if (event.kind === 'load') askAgeIfNeeded();
   });
-  watchSystemTheme(() => applyAppearance(store.get('settings'), store.get('backgroundImage')));
   window.addEventListener('hashchange', () => render({ animate: true }));
 
   askAgeIfNeeded();

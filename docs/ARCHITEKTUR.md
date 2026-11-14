@@ -342,6 +342,23 @@ Was an diesem Plan austauschbar wirken könnte: Bottom-Bar, Karten, Dark Mode gi
 	3.	Ein Server für Frontend und Backend (einfachstes Deployment). Einverstanden?
 	4.	Mini-Produkt zuerst (Schritte 2, 3, 4a, 6), danach die übrigen Module. Einverstanden?
 
-9. Nachtrag: Hintergrund (Schema 2)
+9. Nachtrag: Hintergrund und Designs (Schema 3)
 
-Neu in settings: background { paperLight, paperDark, pattern, usePhoto, dim }. Neu als Sammlung: backgroundImage { v, dataUrl, width, height } mit einem JPEG als Data-URL (höchstens 820.000 Zeichen). settings.v und schemaVersion stehen auf 2, die Migration 1 -> 2 in storage.js ergänzt Standardwerte. Das Foto liegt getrennt von settings, damit Einstellungsänderungen das Bild nicht neu schreiben. Das Rückgängig-Protokoll ist zusätzlich auf 1,5 Mio. Zeichen begrenzt, Backups lassen das Foto aus. Mit Foto liegt der Inhalt auf einem Blatt (96 % deckend), damit der Kontrast auf jedem Bild gilt.
+Ersetzt den Nachtrag zu Schema 2. Es gibt eine einzige Hintergrundeinstellung, keine Trennung nach hell und dunkel.
+
+Datenmodell (alles mit Versionsnummer):
+- settings.v = 3. Entfallen ist settings.theme. Neu: settings.background { gradient { type: linear|radial, angle 0..360, colors: 1..4 x "#rrggbb" }, paper: "standard" | Vorgabe | "#rrggbb", pattern, usePhoto, dim }. Optional settings.migrated: die nicht mehr gebrauchten Werte aus Schema 2 (theme, paperLight, paperDark).
+- backgroundImage { v, dataUrl, width, height }: ein JPEG als Data-URL, höchstens 820.000 Zeichen. Getrennt von settings, damit Einstellungsänderungen das Bild nicht neu schreiben.
+- designs: Liste von { v, id, name (1..40), createdAt, accent, background { gradient, paper, pattern } }, höchstens 20. Die vier mitgelieferten Designs stehen im Code (js/core/designs.js), nicht im Speicher. Ein Foto gehört nicht zu einem Design (Speichergrenze).
+- Migration 1 -> 2 und 2 -> 3 in storage.js. 2 -> 3 macht aus der bisher wirksamen Papierfarbe einen einfarbigen Verlauf und die Papiertönung. "System" wird mit der Geräteeinstellung zum Zeitpunkt der Migration aufgelöst. Das Schema (hell oder dunkel) bleibt wie vorher. Vor der Migration entsteht ein Backup. Alte Exportdateien durchlaufen dieselbe Migration. Export und Import enthalten backgroundImage und designs.
+
+Erscheinungsbild (js/core/appearance.js, reine Funktionen):
+1. Prüfpunkte: jede Verlaufsfarbe und die Mitte zwischen je zwei Farben. Mit Foto sind es Schwarz und Weiß (schlechtester Fall).
+2. Schema: hell, wenn die mittlere Helligkeit der Prüfpunkte über 0,179 liegt (dort ist der Kontrast zu Schwarz und Weiß gleich), sonst dunkel. Das Schema bestimmt Schrift- und Statusfarben.
+3. Papier: Die Tönung bekommt die Helligkeit des Schemas, Farbton und Sättigung bleiben. Der Inhalt liegt auf Papier mit Deckkraft 90 % über dem Hintergrund, Karten und Segmentflächen sind deckend.
+4. Kontrast: Schrift, Akzent und Statusfarben gegen das Papier über jedem Prüfpunkt, mit Muster auch gegen die Musterstriche. Unter 4,5:1 (mit 3 % Reserve für Rundung) gilt als Warnung. Korrektur in zwei Stufen: erst die Deckkraft bis 100 % erhöhen, dann die Tönung Richtung Weiß oder Schwarz ziehen. Das Ergebnis meldet Warnung, Korrektur und kleinsten Kontrast an das Profil.
+5. Gleiche Funktion für die Vorschau in Explore, die App und tools/kontrast.mjs.
+
+Folge für das Layout: Der Inhalt jeder Ansicht liegt immer auf dem Papier. Beim Standardverlauf (eine Farbe gleich Papier) ist es vom Hintergrund nicht zu unterscheiden, bei Verläufen und Fotos sieht man den Hintergrund an den Rändern und unter dem Inhalt.
+
+Grenzen: Das Rückgängig-Protokoll ist zusätzlich auf 1,5 Mio. Zeichen begrenzt, Backups lassen das Foto aus.

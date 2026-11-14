@@ -3,8 +3,16 @@ import assert from 'node:assert/strict';
 import { createStorage, ImportError } from '../js/core/storage.js';
 import { createStore, ValidationError } from '../js/core/store.js';
 import { validate } from '../js/core/validate.js';
-import { defaultCollections, UNDO_LIMIT, UNDO_BYTES_LIMIT } from '../js/config.js';
-import { contrast, derivePaper, mix, resolvePaper, paperColor } from '../js/core/colors.js';
+import { defaultCollections, SCHEMA_VERSION, UNDO_LIMIT, UNDO_BYTES_LIMIT } from '../js/config.js';
+import {
+  contrast, hexToHsl, hexToHsv, hsvToHex, mix, normalizeHex, accentFor,
+} from '../js/core/colors.js';
+import {
+  derivePaper, gradientCss, gradientSamples, previewColors, resolveAppearance, schemeFor, tintFor,
+} from '../js/core/appearance.js';
+import {
+  BUILTIN_DESIGNS, applyDesign, designFromSettings, isActive,
+} from '../js/core/designs.js';
 import { fitSize } from '../js/ui/image.js';
 import { SCHEMAS } from '../js/core/schemas.js';
 
@@ -32,6 +40,16 @@ async function freshStore(backend = memoryBackend()) {
   return { backend, storage, store };
 }
 
+
+const bgOf = (colors, extra = {}) => ({
+  gradient: { type: 'linear', angle: 160, colors, ...extra.gradient },
+  paper: 'standard',
+  pattern: 'plain',
+  usePhoto: false,
+  dim: 35,
+  ...extra.background,
+});
+
 test('Standardwerte sind gültig', () => {
   for (const [name, value] of Object.entries(defaultCollections())) {
     assert.deepEqual(validate(value, SCHEMAS[name], name), [], name);
@@ -40,19 +58,19 @@ test('Standardwerte sind gültig', () => {
 
 test('Änderung wird gespeichert und überlebt Neuladen', async () => {
   const { backend, store } = await freshStore();
-  await store.transact('Theme: Dunkel', ['settings'], (d) => { d.settings.theme = 'dark'; });
+  await store.transact('Dichte: Kompakt', ['settings'], (d) => { d.settings.density = 'compact'; });
   const { store: reloaded } = await freshStore(backend);
-  assert.equal(reloaded.get('settings').theme, 'dark');
+  assert.equal(reloaded.get('settings').density, 'compact');
 });
 
 test('Rückgängig stellt den alten Stand her, auch nach Neuladen', async () => {
   const { backend, store } = await freshStore();
-  await store.transact('Theme: Dunkel', ['settings'], (d) => { d.settings.theme = 'dark'; });
+  await store.transact('Akzent: Moos', ['settings'], (d) => { d.settings.accent = 'moos'; });
   await store.transact('Dichte: Kompakt', ['settings'], (d) => { d.settings.density = 'compact'; });
   const entry = await store.undo();
   assert.equal(entry.label, 'Dichte: Kompakt');
   assert.equal(store.get('settings').density, 'normal');
-  assert.equal(store.get('settings').theme, 'dark');
+  assert.equal(store.get('settings').accent, 'moos');
   const { store: reloaded } = await freshStore(backend);
   assert.equal(reloaded.get('settings').density, 'normal');
   assert.equal(reloaded.get('undoLog').length, 1);
@@ -65,7 +83,7 @@ test('Rückgängig ohne Eintrag gibt null zurück', async () => {
 
 test('Unveränderte Daten erzeugen keinen Rückgängig-Eintrag', async () => {
   const { store } = await freshStore();
-  const result = await store.transact('nichts', ['settings'], (d) => { d.settings.theme = 'system'; });
+  const result = await store.transact('nichts', ['settings'], (d) => { d.settings.density = 'normal'; });
   assert.equal(result, null);
   assert.equal(store.get('undoLog').length, 0);
 });
@@ -73,23 +91,23 @@ test('Unveränderte Daten erzeugen keinen Rückgängig-Eintrag', async () => {
 test('Ungültige Änderung wird abgelehnt und nichts gespeichert', async () => {
   const { backend, store } = await freshStore();
   await assert.rejects(
-    store.transact('kaputt', ['settings'], (d) => { d.settings.theme = 'neon'; }),
+    store.transact('kaputt', ['settings'], (d) => { d.settings.density = 'riesig'; }),
     ValidationError,
   );
-  assert.equal(store.get('settings').theme, 'system');
+  assert.equal(store.get('settings').density, 'normal');
   assert.equal(backend.getItem('lifeos:settings'), null);
 });
 
 test('Gelesene Daten sind schreibgeschützt', async () => {
   const { store } = await freshStore();
-  assert.throws(() => { 'use strict'; store.get('settings').theme = 'dark'; }, TypeError);
+  assert.throws(() => { 'use strict'; store.get('settings').density = 'compact'; }, TypeError);
 });
 
 test('Rückgängig-Protokoll ist auf UNDO_LIMIT begrenzt', async () => {
   const { store } = await freshStore();
   for (let i = 0; i < UNDO_LIMIT + 5; i += 1) {
     await store.transact(`Wechsel ${i}`, ['settings'], (d) => {
-      d.settings.theme = d.settings.theme === 'dark' ? 'light' : 'dark';
+      d.settings.density = d.settings.density === 'compact' ? 'normal' : 'compact';
     });
   }
   assert.equal(store.get('undoLog').length, UNDO_LIMIT);
@@ -106,68 +124,71 @@ test('Speicher voll: Fehler, Zustand bleibt unverändert', async () => {
   const backend = memoryBackend({ failWritesAfter: 0 });
   const store = createStore(createStorage(backend));
   await store.init();
-  await assert.rejects(store.transact('x', ['settings'], (d) => { d.settings.theme = 'dark'; }), /Speichern fehlgeschlagen/);
-  assert.equal(store.get('settings').theme, 'system');
+  await assert.rejects(store.transact('x', ['settings'], (d) => { d.settings.density = 'compact'; }), /Speichern fehlgeschlagen/);
+  assert.equal(store.get('settings').density, 'normal');
 });
 
 test('Teilweise geschriebene Änderung wird zurückgerollt', async () => {
   const backend = memoryBackend();
   const store = createStore(createStorage(backend));
   await store.init();
-  await store.transact('a', ['settings'], (d) => { d.settings.theme = 'light'; });
-  // Nächster Schreibvorgang (meta) klappt, der zweite (settings) scheitert.
+  await store.transact('a', ['settings'], (d) => { d.settings.accent = 'moos'; });
   const real = backend.setItem;
   let calls = 0;
   backend.setItem = (k, v) => { calls += 1; if (calls === 2) throw new Error('voll'); real(k, v); };
   await assert.rejects(store.transact('b', ['meta', 'settings'], (d) => {
     d.meta.ageGroup = 'adult';
-    d.settings.theme = 'dark';
+    d.settings.accent = 'tinte';
   }));
   backend.setItem = real;
   const { store: reloaded } = await freshStore(backend);
   assert.equal(reloaded.get('meta').ageGroup, 'unset');
-  assert.equal(reloaded.get('settings').theme, 'light');
+  assert.equal(reloaded.get('settings').accent, 'moos');
 });
 
 test('Kaputtes JSON im Speicher: App startet, Kopie bleibt erhalten', async () => {
   const backend = memoryBackend();
   backend.setItem('lifeos:settings', '{kaputt');
-  const storage = createStorage(backend);
-  const { data, problems } = await storage.loadAll();
-  assert.equal(data.settings.theme, 'system');
+  const { data, problems } = await createStorage(backend).loadAll();
+  assert.equal(data.settings.density, 'normal');
   assert.equal(problems.length, 1);
   assert.ok([...backend.map.keys()].some((k) => k.startsWith('lifeos:defekt:settings')));
 });
 
 test('Gültiges JSON mit falschem Inhalt wird zurückgesetzt', async () => {
   const backend = memoryBackend();
-  backend.setItem('lifeos:settings', JSON.stringify({ v: 1, theme: 'neon' }));
+  backend.setItem('lifeos:settings', JSON.stringify({ v: 3, density: 'riesig' }));
   const { data, problems } = await createStorage(backend).loadAll();
-  assert.equal(data.settings.theme, 'system');
+  assert.equal(data.settings.density, 'normal');
   assert.equal(problems.length, 1);
 });
 
 test('Export und Import ergeben dieselben Daten', async () => {
   const { storage, store } = await freshStore();
   await store.transact('t', ['settings'], (d) => { d.settings.accent = '#112233'; });
-  const text = storage.exportAll(store.snapshot());
-  const imported = storage.parseImport(text);
+  const imported = storage.parseImport(storage.exportAll(store.snapshot()));
   assert.equal(imported.settings.accent, '#112233');
   assert.equal(imported.meta.ageGroup, 'unset');
+  assert.deepEqual(imported.designs, []);
 });
 
 test('Import lehnt kaputte Dateien mit lesbarer Meldung ab', async () => {
   const { storage, store } = await freshStore();
   const good = JSON.parse(storage.exportAll(store.snapshot()));
+  const withSettings = (patch) => JSON.stringify({
+    ...good, collections: { ...good.collections, settings: { ...good.collections.settings, ...patch } },
+  });
   const cases = {
     'kein JSON': 'das ist nichts',
     'leere Datei': '',
     'fremdes JSON': '{"a":1}',
     'null': 'null',
     'Sammlung fehlt': JSON.stringify({ ...good, collections: { meta: good.collections.meta } }),
-    'falscher Wert': JSON.stringify({ ...good, collections: { ...good.collections, settings: { ...good.collections.settings, theme: 'neon' } } }),
+    'falscher Wert': withSettings({ density: 'riesig' }),
     'neuere Version': JSON.stringify({ ...good, schemaVersion: 99 }),
     'unbekanntes Feld': JSON.stringify({ ...good, collections: { ...good.collections, meta: { ...good.collections.meta, boese: 1 } } }),
+    'Verlauf mit 5 Farben': withSettings({ background: { ...good.collections.settings.background, gradient: { type: 'linear', angle: 0, colors: ['#111111', '#222222', '#333333', '#444444', '#555555'] } } }),
+    'Verlauf ohne Farben': withSettings({ background: { ...good.collections.settings.background, gradient: { type: 'linear', angle: 0, colors: [] } } }),
   };
   for (const [name, text] of Object.entries(cases)) {
     assert.throws(() => storage.parseImport(text), ImportError, name);
@@ -176,33 +197,33 @@ test('Import lehnt kaputte Dateien mit lesbarer Meldung ab', async () => {
 
 test('Import ersetzt Daten, legt Backup an und leert das Rückgängig-Protokoll', async () => {
   const { backend, storage, store } = await freshStore();
-  await store.transact('t', ['settings'], (d) => { d.settings.theme = 'dark'; });
+  await store.transact('t', ['settings'], (d) => { d.settings.accent = 'moos'; });
   const imported = defaultCollections();
   imported.settings.density = 'compact';
   await storage.importAll(store.snapshot(), {
     meta: imported.meta,
     settings: imported.settings,
     backgroundImage: imported.backgroundImage,
+    designs: imported.designs,
     dashboard: imported.dashboard,
   });
   const { store: reloaded } = await freshStore(backend);
   assert.equal(reloaded.get('settings').density, 'compact');
-  assert.equal(reloaded.get('settings').theme, 'system');
+  assert.equal(reloaded.get('settings').accent, 'terrakotta');
   assert.equal(reloaded.get('undoLog').length, 0);
   assert.ok([...backend.map.keys()].some((k) => k.startsWith('lifeos:backup:')));
 });
 
 test('Migration: Schritte laufen der Reihe nach, Backup entsteht', async () => {
   const backend = memoryBackend();
-  const old = defaultCollections();
-  backend.setItem('lifeos:meta', JSON.stringify(old.meta));
+  backend.setItem('lifeos:meta', JSON.stringify(defaultCollections().meta));
   const storage = createStorage(backend, {
-    targetVersion: 3,
-    migrations: { 2: (data) => { data.settings.density = 'compact'; } },
+    targetVersion: SCHEMA_VERSION + 1,
+    migrations: { [SCHEMA_VERSION]: (data) => { data.settings.density = 'compact'; } },
   });
   const { data, problems } = await storage.loadAll();
   assert.deepEqual(problems, []);
-  assert.equal(data.meta.schemaVersion, 3);
+  assert.equal(data.meta.schemaVersion, SCHEMA_VERSION + 1);
   assert.equal(data.settings.density, 'compact');
   assert.ok([...backend.map.keys()].some((k) => k.startsWith('lifeos:backup:')));
 });
@@ -211,11 +232,11 @@ test('Migration: Fehler lässt die Daten unverändert und meldet es', async () =
   const backend = memoryBackend();
   backend.setItem('lifeos:meta', JSON.stringify(defaultCollections().meta));
   const storage = createStorage(backend, {
-    targetVersion: 3,
-    migrations: { 2: () => { throw new Error('kaputt'); } },
+    targetVersion: SCHEMA_VERSION + 1,
+    migrations: { [SCHEMA_VERSION]: () => { throw new Error('kaputt'); } },
   });
   const { data, problems } = await storage.loadAll();
-  assert.equal(data.meta.schemaVersion, 2);
+  assert.equal(data.meta.schemaVersion, SCHEMA_VERSION);
   assert.match(problems[0], /migration/i);
 });
 
@@ -229,61 +250,153 @@ test('Validierung: Grenzen und unbekannte Felder', () => {
   assert.equal(validate([], schema).length, 1);
 });
 
-// Daten, wie Schritt 2 sie gespeichert hat (Schema 1, ohne Hintergrund).
-function version1Data() {
+// --- Migration von Schema 1 und 2 auf 3 ------------------------------------
+
+function version1Data(theme = 'dark') {
   const current = defaultCollections();
   const { background, ...settings } = current.settings;
   return {
     meta: { ...current.meta, schemaVersion: 1 },
-    settings: { ...settings, v: 1, theme: 'dark', accent: 'moos' },
+    settings: { ...settings, v: 1, theme, accent: 'moos' },
     dashboard: current.dashboard,
   };
 }
 
-test('Migration 1 -> 2: Hintergrund kommt dazu, bisherige Einstellungen bleiben', async () => {
+function version2Data(theme, background) {
+  const current = defaultCollections();
+  const { background: ignored, ...settings } = current.settings;
+  return {
+    meta: { ...current.meta, schemaVersion: 2 },
+    settings: {
+      ...settings,
+      v: 2,
+      theme,
+      accent: 'tinte',
+      background: {
+        paperLight: 'standard', paperDark: 'standard', pattern: 'plain', usePhoto: false, dim: 35, ...background,
+      },
+    },
+    backgroundImage: { v: 1, dataUrl: '', width: 0, height: 0 },
+    dashboard: current.dashboard,
+  };
+}
+
+async function loadFrom(data, options = {}) {
   const backend = memoryBackend();
-  const old = version1Data();
-  for (const [name, value] of Object.entries(old)) backend.setItem(`lifeos:${name}`, JSON.stringify(value));
-  const { data, problems } = await createStorage(backend).loadAll();
+  for (const [name, value] of Object.entries(data)) backend.setItem(`lifeos:${name}`, JSON.stringify(value));
+  const result = await createStorage(backend, options).loadAll();
+  return { ...result, backend };
+}
+
+test('Migration 1 -> 3: Einstellungen bleiben, Thema wird zum Verlauf', async () => {
+  const { data, problems, backend } = await loadFrom(version1Data('dark'));
   assert.deepEqual(problems, []);
-  assert.equal(data.meta.schemaVersion, 2);
-  assert.equal(data.settings.v, 2);
-  assert.equal(data.settings.theme, 'dark');
+  assert.equal(data.meta.schemaVersion, 3);
+  assert.equal(data.settings.v, 3);
+  assert.equal('theme' in data.settings, false);
   assert.equal(data.settings.accent, 'moos');
-  assert.deepEqual(data.settings.background, defaultCollections().settings.background);
-  assert.equal(data.backgroundImage.dataUrl, '');
+  assert.deepEqual(data.settings.background.gradient.colors, ['#15140F']);
+  assert.equal(schemeFor(data.settings.background.gradient.colors), 'dark');
+  assert.equal(data.settings.migrated.theme, 'dark');
+  assert.deepEqual(data.designs, []);
   assert.ok([...backend.map.keys()].some((k) => k.startsWith('lifeos:backup:')));
 });
 
-test('Import einer Exportdatei aus Schema 1 wird migriert', async () => {
-  const storage = createStorage(memoryBackend());
-  const old = version1Data();
-  const file = JSON.stringify({ app: 'lifeos', exportVersion: 1, schemaVersion: 1, collections: old });
-  const imported = storage.parseImport(file);
-  assert.equal(imported.settings.background.pattern, 'plain');
-  assert.equal(imported.meta.schemaVersion, 2);
-  assert.equal(imported.settings.theme, 'dark');
+test('Migration 2 -> 3: jedes Thema ergibt dasselbe Schema wie vorher', async () => {
+  const cases = [
+    ['light', false, 'light'],
+    ['dark', false, 'dark'],
+    ['system', true, 'dark'],
+    ['system', false, 'light'],
+  ];
+  for (const [theme, prefersDark, expected] of cases) {
+    const { data, problems } = await loadFrom(version2Data(theme, {}), { prefersDark });
+    assert.deepEqual(problems, [], `${theme}/${prefersDark}`);
+    assert.equal(schemeFor(data.settings.background.gradient.colors), expected, `${theme}/${prefersDark}`);
+    assert.equal(data.settings.background.paper, 'standard');
+  }
 });
+
+test('Migration 2 -> 3: gewählte Papierfarbe bleibt, die unbenutzte geht nicht verloren', async () => {
+  const input = version2Data('dark', { paperLight: 'creme', paperDark: 'tanne', pattern: 'grid', usePhoto: true, dim: 55 });
+  const { data } = await loadFrom(input);
+  const { background, migrated } = data.settings;
+  assert.deepEqual(background.gradient.colors, ['#131A15']);
+  assert.equal(background.paper, '#131A15');
+  assert.equal(background.pattern, 'grid');
+  assert.equal(background.usePhoto, true);
+  assert.equal(background.dim, 55);
+  assert.deepEqual(migrated, { fromVersion: 2, theme: 'dark', paperLight: 'creme', paperDark: 'tanne' });
+  assert.equal(data.settings.accent, 'tinte');
+});
+
+test('Migration 2 -> 3: helles Thema mit schwarzem Papier bleibt hell', async () => {
+  const { data } = await loadFrom(version2Data('light', { paperLight: '#000000' }));
+  assert.equal(schemeFor(data.settings.background.gradient.colors), 'light');
+  const { data: darkData } = await loadFrom(version2Data('dark', { paperDark: '#FFFFFF' }));
+  assert.equal(schemeFor(darkData.settings.background.gradient.colors), 'dark');
+});
+
+test('Migration 2 -> 3: Foto bleibt unverändert erhalten', async () => {
+  const input = version2Data('light', { usePhoto: true });
+  input.backgroundImage = { v: 1, dataUrl: TINY_JPEG, width: 800, height: 600 };
+  const { data } = await loadFrom(input);
+  assert.equal(data.backgroundImage.dataUrl, TINY_JPEG);
+  assert.equal(data.backgroundImage.width, 800);
+});
+
+test('Import: Exportdateien aus Schema 1 und 2 werden migriert', async () => {
+  const storage = createStorage(memoryBackend(), { prefersDark: false });
+  const v1 = storage.parseImport(JSON.stringify({ app: 'lifeos', schemaVersion: 1, collections: version1Data('light') }));
+  assert.equal(v1.settings.v, 3);
+  assert.equal(v1.meta.schemaVersion, 3);
+  assert.deepEqual(v1.designs, []);
+  const v2data = version2Data('dark', { pattern: 'dots' });
+  const { dashboard, meta, settings, backgroundImage } = v2data;
+  const v2 = storage.parseImport(JSON.stringify({
+    app: 'lifeos', schemaVersion: 2, collections: { dashboard, meta, settings, backgroundImage },
+  }));
+  assert.equal(v2.settings.background.pattern, 'dots');
+  assert.equal(schemeFor(v2.settings.background.gradient.colors), 'dark');
+  assert.deepEqual(v2.designs, []);
+});
+
+// --- Hintergrund, Foto, Designs im Speicher --------------------------------
 
 test('Hintergrund: Änderung ist rückgängig-fähig und überlebt Neuladen', async () => {
   const { backend, store } = await freshStore();
   await store.transact('Muster: Kariert', ['settings'], (d) => { d.settings.background.pattern = 'grid'; });
-  await store.transact('Papier dunkel', ['settings'], (d) => { d.settings.background.paperDark = '#223344'; });
+  await store.transact('Verlauf', ['settings'], (d) => {
+    d.settings.background.gradient = { type: 'radial', angle: 0, colors: ['#223344', '#ffeecc'] };
+  });
   const { store: reloaded } = await freshStore(backend);
-  assert.equal(reloaded.get('settings').background.pattern, 'grid');
-  assert.equal(reloaded.get('settings').background.paperDark, '#223344');
+  assert.equal(reloaded.get('settings').background.gradient.type, 'radial');
   await reloaded.undo();
-  assert.equal(reloaded.get('settings').background.paperDark, 'standard');
+  assert.deepEqual(reloaded.get('settings').background.gradient.colors, ['#F5F1E8']);
   assert.equal(reloaded.get('settings').background.pattern, 'grid');
 });
 
 test('Hintergrund: ungültige Werte werden abgelehnt', async () => {
   const { store } = await freshStore();
-  for (const [key, value] of [['pattern', 'wellen'], ['paperLight', 'rot'], ['paperLight', '#12345'], ['dim', 90], ['dim', 12.5], ['usePhoto', 'ja']]) {
+  const tries = [
+    ['gradient', { type: 'conic', angle: 0, colors: ['#111111'] }],
+    ['gradient', { type: 'linear', angle: 361, colors: ['#111111'] }],
+    ['gradient', { type: 'linear', angle: 10.5, colors: ['#111111'] }],
+    ['gradient', { type: 'linear', angle: 0, colors: [] }],
+    ['gradient', { type: 'linear', angle: 0, colors: ['#111111', '#222222', '#333333', '#444444', '#555555'] }],
+    ['gradient', { type: 'linear', angle: 0, colors: ['rot'] }],
+    ['gradient', { type: 'linear', angle: 0, colors: ['#12345'] }],
+    ['gradient', { type: 'linear', angle: 0, colors: ['url(x)'] }],
+    ['paper', 'rot'],
+    ['pattern', 'wellen'],
+    ['dim', 90],
+    ['usePhoto', 'ja'],
+  ];
+  for (const [key, value] of tries) {
     await assert.rejects(
       store.transact('x', ['settings'], (d) => { d.settings.background[key] = value; }),
       ValidationError,
-      `${key}=${value}`,
+      `${key}=${JSON.stringify(value)}`,
     );
   }
 });
@@ -298,8 +411,7 @@ test('Foto: Speichern, Export, Import und Rückgängig inklusive Bild', async ()
     d.backgroundImage.height = 900;
     d.settings.background.usePhoto = true;
   });
-  const exported = storage.exportAll(store.snapshot());
-  const imported = storage.parseImport(exported);
+  const imported = storage.parseImport(storage.exportAll(store.snapshot()));
   assert.equal(imported.backgroundImage.dataUrl, TINY_JPEG);
   await store.undo();
   assert.equal(store.get('backgroundImage').dataUrl, '');
@@ -342,8 +454,7 @@ test('Backup enthält das Foto nicht', async () => {
   const { backend, storage, store } = await freshStore();
   await store.transact('Foto', ['backgroundImage'], (d) => { d.backgroundImage.dataUrl = TINY_JPEG; });
   const stamp = storage.makeBackup(store.snapshot());
-  const saved = JSON.parse(backend.getItem(`lifeos:backup:${stamp}`));
-  assert.equal('backgroundImage' in saved, false);
+  assert.equal('backgroundImage' in JSON.parse(backend.getItem(`lifeos:backup:${stamp}`)), false);
 });
 
 test('Rückgängig-Protokoll ist zusätzlich nach Größe begrenzt, der neueste Eintrag bleibt', async () => {
@@ -367,25 +478,185 @@ test('Bildgröße: längere Seite höchstens 1600, Verhältnis bleibt, kleine bl
   assert.deepEqual(fitSize(10000, 1, 1600), { width: 1600, height: 1 });
 });
 
-test('Papier: freie Farben werden so angepasst, dass Text lesbar bleibt', () => {
-  const accent = '#A93818';
-  const black = resolvePaper('#000000', 'light', { accent });
-  assert.equal(black.adjusted, true);
-  assert.equal(black.readable, true);
-  assert.ok(contrast('#5E5A52', black.set.paper) >= 4.5);
-  const white = resolvePaper('#FFFFFF', 'dark', { accent: '#EE7B54' });
-  assert.equal(white.adjusted, true);
-  assert.equal(white.readable, true);
-  assert.ok(contrast('#A39D8E', white.set.paper) >= 4.5);
-  const standard = resolvePaper(paperColor('standard', 'light'), 'light', { accent });
-  assert.equal(standard.adjusted, false);
+test('Designs: Übernehmen ist ein Schritt und rückgängig-fähig, Foto bleibt gespeichert', async () => {
+  const { store } = await freshStore();
+  await store.transact('Foto', ['settings', 'backgroundImage'], (d) => {
+    d.backgroundImage.dataUrl = TINY_JPEG;
+    d.settings.background.usePhoto = true;
+  });
+  const design = BUILTIN_DESIGNS.find((entry) => entry.id === 'tannenwald');
+  await store.transact(`Design: ${design.name}`, ['settings'], (d) => applyDesign(d.settings, design));
+  const { settings, backgroundImage } = { settings: store.get('settings'), backgroundImage: store.get('backgroundImage') };
+  assert.equal(settings.accent, 'moos');
+  assert.equal(settings.background.gradient.type, 'radial');
+  assert.equal(settings.background.usePhoto, false);
+  assert.equal(backgroundImage.dataUrl, TINY_JPEG);
+  assert.ok(isActive(settings, design));
+  await store.undo();
+  assert.equal(store.get('settings').background.usePhoto, true);
+  assert.equal(store.get('settings').accent, 'terrakotta');
 });
 
-test('Papier: abgeleitete Standardflächen liegen nahe an style.css', () => {
-  const light = derivePaper('#F5F1E8', 'light');
-  assert.ok(contrast(light.raised, '#FBF9F3') < 1.02);
-  assert.ok(contrast(light.sunk, '#ECE6D8') < 1.03);
-  const dark = derivePaper('#15140F', 'dark');
-  assert.ok(contrast(dark.raised, '#1F1D17') < 1.05);
+test('Designs: eigenes Design speichern, in Export und Import, löschen', async () => {
+  const { storage, store } = await freshStore();
+  await store.transact('Verlauf', ['settings'], (d) => {
+    d.settings.background.gradient = { type: 'linear', angle: 45, colors: ['#102030', '#f0e0d0'] };
+    d.settings.accent = 'senf';
+  });
+  const mine = {
+    v: 1, id: crypto.randomUUID(), name: 'Abendlicht', createdAt: new Date().toISOString(),
+    ...designFromSettings(store.get('settings')),
+  };
+  await store.transact('Design gespeichert', ['designs'], (d) => { d.designs.push(mine); });
+  assert.ok(isActive(store.get('settings'), mine));
+  const imported = storage.parseImport(storage.exportAll(store.snapshot()));
+  assert.equal(imported.designs[0].name, 'Abendlicht');
+  assert.deepEqual(imported.designs[0].background.gradient.colors, ['#102030', '#f0e0d0']);
+  await store.transact('Design gelöscht', ['designs'], (d) => { d.designs = []; });
+  assert.equal(store.get('designs').length, 0);
+  await store.undo();
+  assert.equal(store.get('designs').length, 1);
+});
+
+test('Designs: ungültige Designs werden abgelehnt', async () => {
+  const { store } = await freshStore();
+  const base = {
+    v: 1, id: 'a', name: 'X', createdAt: new Date().toISOString(), accent: 'moos',
+    background: { gradient: { type: 'linear', angle: 0, colors: ['#111111'] }, paper: 'standard', pattern: 'plain' },
+  };
+  const bad = [
+    { ...base, name: '' },
+    { ...base, name: 'x'.repeat(41) },
+    { ...base, accent: 'neon' },
+    { ...base, extra: 1 },
+    { ...base, background: { ...base.background, pattern: 'wellen' } },
+  ];
+  for (const design of bad) {
+    await assert.rejects(store.transact('x', ['designs'], (d) => { d.designs.push(design); }), ValidationError);
+  }
+  await assert.rejects(store.transact('x', ['designs'], (d) => {
+    for (let i = 0; i < 21; i += 1) d.designs.push({ ...base, id: String(i) });
+  }), ValidationError);
+});
+
+// --- Farben und Erscheinungsbild -------------------------------------------
+
+test('Farben: Hex-Eingabe, HSV-Umrechnung', () => {
+  assert.equal(normalizeHex('#1a2b3c'), '#1A2B3C');
+  assert.equal(normalizeHex('1a2b3c'), '#1A2B3C');
+  assert.equal(normalizeHex('#abc'), '#AABBCC');
+  for (const bad of ['', '#12', '#12345', '#1234567', 'rot', '#gggggg', 'url(x)']) {
+    assert.equal(normalizeHex(bad), null, bad);
+  }
+  for (const hex of ['#FF0000', '#00FF00', '#3B6FD1', '#808080', '#000000', '#FFFFFF', '#F5F1E8']) {
+    const { h, s, v } = hexToHsv(hex);
+    assert.equal(hsvToHex(h, s, v), hex);
+  }
+});
+
+test('Schema folgt der Helligkeit des Verlaufs', () => {
+  assert.equal(schemeFor(['#F5F1E8']), 'light');
+  assert.equal(schemeFor(['#15140F']), 'dark');
+  assert.equal(schemeFor(['#FFE8CC', '#F4A99B']), 'light');
+  assert.equal(schemeFor(['#1B1B3A', '#693668']), 'dark');
+  assert.equal(schemeFor(['#FFFFFF', '#FFFFFF', '#FFFFFF', '#000000']), 'light');
+  assert.equal(schemeFor(['#000000', '#000000', '#000000', '#FFFFFF']), 'dark');
+});
+
+test('Verlauf: CSS und Prüfpunkte (jede Farbe und jede Mitte)', () => {
+  assert.equal(gradientCss({ type: 'linear', angle: 10, colors: ['#112233'] }), '#112233');
+  assert.equal(gradientCss({ type: 'linear', angle: 45, colors: ['#111111', '#222222'] }), 'linear-gradient(45deg, #111111, #222222)');
+  assert.match(gradientCss({ type: 'radial', angle: 45, colors: ['#111111', '#222222'] }), /^radial-gradient\(/);
+  assert.equal(gradientSamples(['#000000']).length, 1);
+  assert.equal(gradientSamples(['#000000', '#FFFFFF']).length, 3);
+  assert.equal(gradientSamples(['#000000', '#FFFFFF', '#FF0000', '#00FF00']).length, 7);
+  assert.equal(gradientSamples(['#000000', '#FFFFFF'])[2], '#808080');
+});
+
+test('Erscheinungsbild: Standard braucht keine Korrektur', () => {
+  for (const colors of [['#F5F1E8'], ['#15140F']]) {
+    const result = resolveAppearance(bgOf(colors), 'terrakotta');
+    assert.equal(result.corrected, false);
+    assert.equal(result.warning, false);
+    assert.ok(result.ratioAfter >= 4.5);
+  }
+});
+
+test('Erscheinungsbild: Schwarz-Weiß-Verlauf wird gewarnt und automatisch korrigiert', () => {
+  const result = resolveAppearance(bgOf(['#000000', '#FFFFFF']), 'terrakotta');
+  assert.equal(result.scheme, 'light');
+  assert.equal(result.readable, true);
+  assert.ok(result.alpha > 0.9, 'Deckkraft wurde erhöht');
+  assert.ok(result.ratioAfter >= 4.5);
+  assert.ok(result.worstBefore.ratio < 4.6);
+});
+
+test('Erscheinungsbild: Extremfälle bleiben lesbar', () => {
+  const gradients = [
+    ['#000000'], ['#FFFFFF'], ['#808080'], ['#FF00FF'], ['#FFFF00', '#0000FF', '#FF0000', '#00FF00'],
+    ['#000000', '#FFFFFF', '#000000', '#FFFFFF'], ['#777777', '#7A7A7A'],
+  ];
+  for (const colors of gradients) {
+    for (const paper of ['standard', 'creme', '#000000', '#FFFFFF', '#FF00FF']) {
+      for (const pattern of ['plain', 'grid']) {
+        for (const photo of [false, true]) {
+          const result = resolveAppearance(bgOf(colors, { background: { paper, pattern } }), '#FFFF00', { photo });
+          assert.equal(result.readable, true, JSON.stringify({ colors, paper, pattern, photo }));
+          assert.ok(contrast(result.text.ink, result.surfaces.raised) >= 4.5);
+          assert.ok(result.ratioAfter >= 4.5, `${result.ratioAfter}`);
+        }
+      }
+    }
+  }
+});
+
+test('Papier: Tönung passt sich dem Schema an, Farbton bleibt', () => {
+  const light = tintFor('#E6EBEF', 'light');
+  const darkTint = tintFor('#E6EBEF', 'dark');
+  assert.ok(contrast(light, '#FFFFFF') < 1.25);
+  assert.ok(Math.abs(hexToHsl(darkTint).h - hexToHsl('#E6EBEF').h) < 12, 'Farbton bleibt');
+  assert.ok(contrast(darkTint, '#000000') < 1.5);
+  assert.equal(tintFor('standard', 'light'), '#F5F1E8');
+  assert.equal(tintFor('standard', 'dark'), '#15140F');
+  const set = derivePaper('#F5F1E8', 'light');
+  assert.ok(contrast(set.raised, '#FBF9F3') < 1.02);
   assert.equal(mix('#000000', '#FFFFFF', 0.5), '#808080');
+});
+
+test('Akzent: freie Farben erreichen auf dem Standardpapier mindestens 6:1', () => {
+  for (const color of ['#FFFF00', '#00FFFF', '#000000', '#808080']) {
+    assert.ok(contrast(accentFor(color, 'light'), '#F5F1E8') >= 6, color);
+    assert.ok(contrast(accentFor(color, 'dark'), '#2A2822') >= 6, color);
+  }
+  assert.equal(accentFor('terrakotta', 'light'), '#A93818');
+});
+
+test('Designs: vier eigenständige Vorgaben, lesbar ohne Korrektur', () => {
+  assert.equal(BUILTIN_DESIGNS.length, 4);
+  assert.equal(new Set(BUILTIN_DESIGNS.map((d) => d.id)).size, 4);
+  assert.equal(new Set(BUILTIN_DESIGNS.map((d) => JSON.stringify(d.background))).size, 4);
+  const schemes = new Set();
+  for (const design of BUILTIN_DESIGNS) {
+    const result = resolveAppearance(design.background, design.accent);
+    assert.equal(result.warning, false, design.id);
+    assert.equal(result.corrected, false, design.id);
+    schemes.add(result.scheme);
+    const colors = previewColors(design.background, design.accent);
+    assert.ok(colors.backdrop && colors.ink && colors.accent);
+    assert.deepEqual(validate({
+      v: 1, id: design.id, name: design.name, createdAt: new Date().toISOString(), accent: design.accent, background: design.background,
+    }, SCHEMAS.designs.items, design.id), []);
+  }
+  assert.deepEqual([...schemes].sort(), ['dark', 'light']);
+});
+
+test('Designs: einfarbiger Verlauf ignoriert Typ und Winkel beim Vergleich', () => {
+  const settings = defaultCollections().settings;
+  const notebook = BUILTIN_DESIGNS[0];
+  assert.equal(isActive(settings, notebook), true);
+  settings.background.gradient.angle = 33;
+  settings.background.gradient.type = 'radial';
+  assert.equal(isActive(settings, notebook), true);
+  settings.background.pattern = 'grid';
+  assert.equal(isActive(settings, notebook), false);
 });

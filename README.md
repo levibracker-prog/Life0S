@@ -4,8 +4,8 @@ Persönliches Betriebssystem für den Alltag als installierbare Mobile-Web-App.
 Nur HTML, CSS und Vanilla JavaScript, keine Frameworks. Die Daten liegen lokal
 im Browser.
 
-Stand: Grundgerüst (Schritt 2 von 8) plus einstellbarer Hintergrund. Vorhanden sind
-Navigation, Darstellung (Theme, Akzentfarbe, Dichte, Schriftgröße, Hintergrund),
+Stand: Grundgerüst (Schritt 2 von 8) plus Hintergrund und Designs. Vorhanden sind
+Navigation, Darstellung (Akzentfarbe, Dichte, Schriftgröße, Hintergrund), Designs in Explore,
 Speicher mit Rückgängig sowie Export und Import. Module, Widgets und Agent folgen. Siehe `ZIEL.md`.
 
 ## Starten
@@ -36,9 +36,9 @@ npm run kontrast
 | `css/components.css` | Buttons, Auswahl, Toast, Dialog, Navigation |
 | `css/dashboard.css`, `css/responsive.css` | Seitenrahmen, Home, schmale und breite Bildschirme |
 | `js/config.js` | Konstanten und Standardwerte |
-| `js/core/` | Speicher, Store mit Rückgängig, Validierung, Farbrechnung, Tagesnotiz |
+| `js/core/` | Speicher, Store mit Rückgängig, Validierung, Farbrechnung, Erscheinungsbild, Designs, Tagesnotiz |
 | `js/ui/` | Navigation, Dialoge, Toasts, Icons, Theme, Bildaufbereitung |
-| `js/views/` | Die fünf Bereiche der App |
+| `js/views/` | Die fünf Bereiche der App, Explore mit den Designs |
 | `assets/fonts/` | Fraunces und Instrument Sans (SIL Open Font License) |
 | `docs/ARCHITEKTUR.md` | Planung: Design, Datenmodell, Agent |
 
@@ -54,21 +54,32 @@ npm run kontrast
 - Neuer Bereich in der Navigation: Ansicht in `js/views/` anlegen, in `VIEWS` (`js/main.js`)
   und `SCREENS` (`js/config.js`) eintragen.
 
-## Hintergrund
+## Hintergrund und Designs
 
-Im Profil unter "Hintergrund": Papierfarbe (für hell und dunkel getrennt, Vorgaben oder
-freie Farbe), Muster (blanko, kariert, liniert, Punkte) und ein eigenes Foto.
+Es gibt genau eine Hintergrundeinstellung, keine getrennten für hell und dunkel.
 
-- Das Foto wird beim Hochladen auf höchstens 1600 px verkleinert und als JPEG (höchstens
-  600 KB) gespeichert. Dateien über 20 MB, beschädigte und Nicht-Bilder werden abgelehnt.
-- Mit Foto liegt der Inhalt auf einem fast deckenden Blatt in der Papierfarbe. Der Regler
-  "Abdunkeln" wirkt auf das Foto dahinter.
-- Reicht der Kontrast einer gewählten Papierfarbe für Text nicht, hellt (hell) oder
-  dunkelt (dunkel) LifeOS sie leicht nach und zeigt einen Hinweis. Freie Akzentfarben
-  werden auf dieselbe Art angepasst. Die Regeln stehen in `js/core/colors.js`.
-- Gespeichert wird das Foto in der eigenen Sammlung `backgroundImage`, die Einstellungen in
-  `settings.background`. Beides ist in Export und Import enthalten und rückgängig-fähig.
-- `npm run kontrast` prüft alle Kombinationen aus Papier, Akzent, Muster und Foto.
+- **Verlauf** (Profil, Hintergrund): 1 bis 4 frei wählbare Farben aus dem vollen Spektrum, je Farbe
+  Farbfläche, Farbtonregler und Hex-Eingabe, dazu eine Schnellauswahl mit 16 Standardfarben. Typ
+  linear oder radial, Winkel 0 bis 360 Grad. Eine Farbe ergibt eine einfarbige Fläche. Helle und
+  dunkle Farben dürfen gemischt werden.
+- **Hell oder dunkel** entscheidet LifeOS selbst: Das mittlere Helligkeitsniveau aller Farben und der
+  Mitten zwischen ihnen legt fest, ob Schrift und Oberflächen hell oder dunkel sind. Es gibt keine
+  Auswahl Hell/Dunkel/System mehr.
+- **Papier**: Der Inhalt liegt auf einer leicht deckenden Papierfläche (Grundwert 90 %). LifeOS prüft
+  den Kontrast der Schrift an jeder Verlaufsfarbe und jeder Mitte. Liegt er unter 4,5:1, zeigt das Profil
+  eine Warnung und korrigiert automatisch: erst wird das Papier deckender, reicht das nicht, wird die
+  Papiertönung angepasst. Die Tönung ist eine Farbe, deren Helligkeit sich dem Verlauf anpasst.
+- **Muster** (blanko, kariert, liniert, Punkte) liegen auf dem Papier.
+- **Foto**: wird beim Hochladen auf höchstens 1600 px verkleinert und als JPEG (höchstens 600 KB)
+  gespeichert, ersetzt den Verlauf, Regler "Abdunkeln". Dateien über 20 MB, beschädigte und
+  Nicht-Bilder werden abgelehnt. Hell oder dunkel folgt auch mit Foto dem Verlauf.
+- **Designs** (Explore): Ein Design bündelt Verlauf, Papier, Muster und Akzentfarbe. Vier Designs sind
+  mitgeliefert (Notizbuch, Morgenrot, Tannenwald, Schulheft), das aktuelle Aussehen lässt sich als
+  eigenes Design speichern (höchstens 20). Ein Tipp übernimmt ein Design, danach geht Rückgängig. Das
+  Foto gehört nicht zu einem Design, es bleibt gespeichert und wird nur ausgeschaltet.
+
+Die Rechnung steht in `js/core/appearance.js` (Schema, Papier, Kontrast) und `js/core/colors.js`.
+`npm run kontrast` prüft 34.560 Kombinationen aus Verlauf, Papier, Akzent, Muster und Foto.
 
 ## Daten
 

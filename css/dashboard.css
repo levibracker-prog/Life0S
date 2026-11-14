@@ -5,15 +5,6 @@
   margin: 0 auto;
 }
 
-.view {
-  padding:
-    calc(env(safe-area-inset-top) + var(--space-5))
-    max(var(--space-4), env(safe-area-inset-right))
-    calc(var(--nav-height) + env(safe-area-inset-bottom) + var(--space-6))
-    max(var(--space-4), env(safe-area-inset-left));
-  animation: view-in var(--dur) var(--ease);
-}
-
 @keyframes view-in {
   from {
     opacity: 0;
@@ -68,18 +59,21 @@
   margin-top: var(--space-6);
 }
 
-/* Mit Foto liegt der Inhalt auf einem Blatt Papier, das das Bild nur
-   leicht durchscheinen lässt. So bleibt der Text auf jedem Foto lesbar
-   (Kontrast in tools/kontrast.mjs gemessen). Die leere Fläche daneben
-   zeigt das Foto. */
-:root[data-photo] .view {
+/* Der Inhalt liegt immer auf einem Blatt Papier, das den Hintergrund nur
+   leicht durchscheinen lässt (Deckkraft --sheet-mix, bei Bedarf automatisch
+   erhöht, siehe js/core/appearance.js). So bleibt Text auf jedem Verlauf und
+   jedem Foto lesbar. Beim Standardpapier ist das Blatt vom Hintergrund
+   nicht zu unterscheiden. */
+.view {
   margin:
     calc(env(safe-area-inset-top) + var(--space-3))
-    var(--space-3)
-    calc(var(--nav-height) + env(safe-area-inset-bottom) + var(--space-3));
+    max(var(--space-2), env(safe-area-inset-right))
+    calc(var(--nav-height) + env(safe-area-inset-bottom) + var(--space-3))
+    max(var(--space-2), env(safe-area-inset-left));
   padding: var(--space-5) var(--space-4) var(--space-6);
   border-radius: 16px;
   background-color: color-mix(in srgb, var(--paper) var(--sheet-mix), transparent);
   background-image: var(--pattern-image);
   background-size: var(--pattern-size);
+  animation: view-in var(--dur) var(--ease);
 }

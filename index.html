@@ -12,16 +12,14 @@
   <link rel="stylesheet" href="css/dashboard.css">
   <link rel="stylesheet" href="css/responsive.css">
   <script>
-    // Setzt das Theme vor dem ersten Zeichnen, damit die Seite beim Start
-    // nicht kurz hell aufblitzt. Die eigentliche Logik steht in js/ui/theme.js.
+    // Färbt die Seite vor dem ersten Zeichnen in der ersten Verlaufsfarbe,
+    // damit beim Start nichts aufblitzt. Alles Weitere macht js/ui/theme.js.
     (function () {
       try {
         var saved = JSON.parse(localStorage.getItem('lifeos:settings'));
-        var theme = saved && saved.theme;
-        var dark = theme === 'dark' ||
-          (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-      } catch (e) { /* ohne gespeicherte Einstellung gilt das helle Theme */ }
+        var color = saved.background.gradient.colors[0];
+        if (/^#[0-9a-fA-F]{6}$/.test(color)) document.documentElement.style.backgroundColor = color;
+      } catch (e) { /* ohne gespeicherte Einstellung gilt das Standardpapier */ }
     })();
   </script>
 </head>
