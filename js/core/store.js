@@ -2,8 +2,8 @@
 // transact(). Dort wird validiert, gespeichert, ein Rückgängig-Eintrag
 // geschrieben und ein Ereignis ausgelöst. Module schreiben nie direkt.
 
-import { UNDO_LIMIT } from '../config.js';
-import { SCHEMAS } from './schemas.js';
+import { UNDO_BYTES_LIMIT, UNDO_LIMIT } from '../config.js';
+import { EXPORTED, SCHEMAS } from './schemas.js';
 import { validate } from './validate.js';
 
 export class ValidationError extends Error {
@@ -19,6 +19,14 @@ function deepFreeze(value) {
     Object.values(value).forEach(deepFreeze);
   }
   return value;
+}
+
+// Begrenzt das Protokoll nach Anzahl und nach Größe. Der neueste Eintrag
+// bleibt immer, damit die letzte Änderung rückgängig zu machen ist.
+function trimLog(log) {
+  const trimmed = log.slice(-UNDO_LIMIT);
+  while (trimmed.length > 1 && JSON.stringify(trimmed).length > UNDO_BYTES_LIMIT) trimmed.shift();
+  return trimmed;
 }
 
 const sameData = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -69,7 +77,7 @@ export function createStore(storage) {
       at: new Date().toISOString(),
       before: Object.fromEntries(changed.map((name) => [name, state[name]])),
     };
-    const log = undoable ? [...state.undoLog, entry].slice(-UNDO_LIMIT) : state.undoLog;
+    const log = undoable ? trimLog([...state.undoLog, entry]) : state.undoLog;
 
     await writeAll(changed.map((name) => [name, draft[name]]), undoable ? log : null);
 
@@ -101,6 +109,9 @@ export function createStore(storage) {
     }
   }
 
+  // Die Sammlungen, die in Export und Import gehören.
+  const snapshot = () => Object.fromEntries(EXPORTED.map((name) => [name, state[name]]));
+
   const lastUndoEntry = () => state.undoLog[state.undoLog.length - 1] ?? null;
 
   async function undo() {
@@ -118,5 +129,5 @@ export function createStore(storage) {
   // Nach einem Import: Zustand aus dem Speicher neu laden.
   const reload = init;
 
-  return { init, get, subscribe, transact, undo, lastUndoEntry, reload };
+  return { init, get, snapshot, subscribe, transact, undo, lastUndoEntry, reload };
 }

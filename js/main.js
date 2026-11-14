@@ -80,16 +80,16 @@ async function start() {
     return;
   }
 
-  applyAppearance(store.get('settings'));
+  applyAppearance(store.get('settings'), store.get('backgroundImage'));
   render({ animate: true });
   problems.forEach((text) => showToast(text, { error: true }));
 
   store.subscribe((event) => {
-    applyAppearance(store.get('settings'));
+    applyAppearance(store.get('settings'), store.get('backgroundImage'));
     render({ animate: event.kind === 'load' });
     if (event.kind === 'load') askAgeIfNeeded();
   });
-  watchSystemTheme(() => applyAppearance(store.get('settings')));
+  watchSystemTheme(() => applyAppearance(store.get('settings'), store.get('backgroundImage')));
   window.addEventListener('hashchange', () => render({ animate: true }));
 
   askAgeIfNeeded();
