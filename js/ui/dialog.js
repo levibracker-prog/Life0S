@@ -57,3 +57,40 @@ export function askAgeGroup() {
     ],
   });
 }
+
+// Fragt nach einem kurzen Text (Name eines Designs). Gibt den bereinigten
+// Text zurück oder null bei Abbruch.
+export function promptDialog({
+  title, text, label, confirmLabel, initial = '', max = 40,
+}) {
+  return new Promise((resolve) => {
+    const input = h('input', {
+      type: 'text', class: 'text-input', maxlength: max, value: initial, required: true, 'aria-label': label,
+    });
+    const form = h('form', { class: 'dialog__form' },
+      input,
+      h('div', { class: 'dialog__actions' },
+        h('button', { type: 'submit', class: 'button button--primary' }, confirmLabel),
+        h('button', { type: 'button', class: 'button', onClick: () => dialog.close('') }, 'Abbrechen')));
+    const dialog = h('dialog', { class: 'dialog', 'aria-labelledby': 'dialog-title' },
+      h('h2', { class: 'dialog__title', id: 'dialog-title' }, title),
+      h('p', { class: 'dialog__text' }, text),
+      form);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const value = input.value.trim().replace(/\s+/g, ' ');
+      if (value) dialog.close(value);
+    });
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) dialog.close('');
+    });
+    dialog.addEventListener('close', () => {
+      const answer = dialog.returnValue;
+      dialog.remove();
+      resolve(answer || null);
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    input.select();
+  });
+}

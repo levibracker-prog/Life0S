@@ -6,9 +6,9 @@ import { readFileSync } from 'node:fs';
 import {
   ACCENTS, PAPERS, PATTERNS, PATTERN_SHARE, SHEET_ALPHA,
 } from '../js/config.js';
-import {
-  TEXT_TOKENS, accentFor, contrast, resolvePaper,
-} from '../js/core/colors.js';
+import { resolveAppearance } from '../js/core/appearance.js';
+import { TEXT_TOKENS, contrast } from '../js/core/colors.js';
+import { BUILTIN_DESIGNS } from '../js/core/designs.js';
 import { textOnAccent } from '../js/ui/theme.js';
 
 const css = readFileSync(new URL('../css/style.css', import.meta.url), 'utf8');
@@ -81,50 +81,59 @@ for (const [key, value] of [['PATTERN_SHARE', PATTERN_SHARE]]) {
   console.log(`${same ? 'ok  ' : 'ABWEICHUNG'}  SHEET_ALPHA = ${SHEET_ALPHA} (CSS: ${match?.[1]} %)`);
 }
 
-// Alle Varianten des Hintergrunds: Papier (Vorgaben und Grenzfälle), Akzent,
-// Muster, mit und ohne Foto. Nach der automatischen Anpassung muss alles lesbar sein.
+// Alle Varianten des Hintergrunds: Verläufe (auch Grenzfälle mit hellen und
+// dunklen Farben gemischt), Papier, Akzent, Muster, mit und ohne Foto. Nach der
+// automatischen Korrektur muss alles lesbar sein.
 console.log('\nHintergrund-Varianten');
-const customPapers = ['#000000', '#FFFFFF', '#FF00FF', '#808080', '#FFFF00', '#0000FF'];
-const customAccents = ['#FFFF00', '#000000', '#808080', '#FFFFFF', '#00FFFF'];
+const gradients = [
+  ['#F5F1E8'], ['#15140F'], ['#000000'], ['#FFFFFF'], ['#808080'], ['#777777', '#7A7A7A'],
+  ['#FF00FF'], ['#FFFF00'], ['#0000FF'], ['#00FFFF'],
+  ['#000000', '#FFFFFF'], ['#FFFFFF', '#000000'],
+  ['#FFE8CC', '#F4A99B', '#6F5A9E'], ['#1B1B3A', '#693668', '#C94B4B'],
+  ['#FFFF00', '#0000FF', '#FF0000', '#00FF00'],
+  ['#000000', '#FFFFFF', '#000000', '#FFFFFF'],
+  ['#FFFFFF', '#FFFFFF', '#FFFFFF', '#000000'],
+  ['#000000', '#000000', '#000000', '#FFFFFF'],
+];
+const papers = [...PAPERS.map((p) => p.id), '#000000', '#FFFFFF', '#FF00FF', '#808080'];
+const accents = [...ACCENTS.map((a) => a.id), '#FFFF00', '#000000', '#FFFFFF', '#00FFFF'];
 let combos = 0;
-let adjustedCount = 0;
+let corrected = 0;
+let warned = 0;
 let unreadable = 0;
-const standardAdjusted = [];
-for (const theme of ['light', 'dark']) {
-  const papers = [
-    ...PAPERS[theme].map((p) => ({ name: p.id, color: p.color })),
-    ...customPapers.map((c) => ({ name: c, color: c })),
-  ];
-  const accents = [
-    ...ACCENTS.map((a) => ({ name: a.id, color: a[theme] })),
-    ...customAccents.map((c) => ({ name: c, color: accentFor(c, theme) })),
-  ];
-  for (const paper of papers) {
-    for (const accent of accents) {
-      for (const { id: pattern } of PATTERNS) {
-        for (const photo of [false, true]) {
-          combos += 1;
-          const result = resolvePaper(paper.color, theme, { accent: accent.color, pattern, photo });
-          if (result.adjusted) adjustedCount += 1;
-          if (!result.readable) {
-            unreadable += 1;
-            console.log(`NICHT LESBAR  ${theme} Papier ${paper.name}, Akzent ${accent.name}, ${pattern}, Foto ${photo}: ${result.margin.toFixed(2)}`);
-          }
-          if (paper.name === 'standard' && result.adjusted && !photo && pattern === 'plain'
-            && ACCENTS.some((a) => a.id === accent.name)) {
-            standardAdjusted.push(`${theme}/${accent.name}`);
+let worstAfter = Infinity;
+for (const colors of gradients) {
+  for (const type of ['linear', 'radial']) {
+    for (const paper of papers) {
+      for (const accent of accents) {
+        for (const { id: pattern } of PATTERNS) {
+          for (const photo of [false, true]) {
+            combos += 1;
+            const background = { gradient: { type, angle: 160, colors }, paper, pattern, usePhoto: false, dim: 35 };
+            const result = resolveAppearance(background, accent, { photo });
+            if (result.corrected) corrected += 1;
+            if (result.warning) warned += 1;
+            worstAfter = Math.min(worstAfter, result.ratioAfter);
+            if (!result.readable || result.ratioAfter < 4.5) {
+              unreadable += 1;
+              if (unreadable <= 10) console.log(`NICHT LESBAR  ${colors.join(' ')} ${type} Papier ${paper}, Akzent ${accent}, ${pattern}, Foto ${photo}: ${result.ratioAfter.toFixed(2)}`);
+            }
           }
         }
       }
     }
   }
 }
-console.log(`${combos} Kombinationen, ${adjustedCount} mit Anpassung der Papierfarbe, ${unreadable} nicht lesbar.`);
-if (standardAdjusted.length) {
-  failures += 1;
-  console.log(`ZU NIEDRIG  Standardpapier ohne Muster und Foto braucht Anpassung: ${standardAdjusted.join(', ')}`);
-}
+console.log(`${combos} Kombinationen: ${warned} mit Warnung (unter 4,5:1 vor der Korrektur), ${corrected} korrigiert, ${unreadable} danach nicht lesbar. Schlechtester Wert nach Korrektur: ${worstAfter.toFixed(2)}:1.`);
 failures += unreadable;
+
+console.log('\nMitgelieferte Designs (sollen ohne Korrektur lesbar sein)');
+for (const design of BUILTIN_DESIGNS) {
+  const result = resolveAppearance(design.background, design.accent);
+  const ok = !result.corrected && result.ratioAfter >= 4.5;
+  if (!ok) failures += 1;
+  console.log(`${ok ? 'ok  ' : 'KORREKTUR NÖTIG'}  ${design.name}: ${result.scheme === 'dark' ? 'dunkel' : 'hell'}, kleinster Kontrast ${result.ratioAfter.toFixed(2)}:1, Papier ${Math.round(result.alpha * 100)} %`);
+}
 
 if (failures) {
   console.log(`\n${failures} Paar(e) unter der Grenze.`);

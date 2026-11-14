@@ -2,13 +2,15 @@
 // über store.transact und lässt sich per Toast rückgängig machen.
 
 import {
-  ACCENTS, DENSITIES, FONT_SCALES, SCREENS, THEMES,
+  ACCENTS, DENSITIES, FONT_SCALES, SCREENS,
 } from '../config.js';
+import { accentFor } from '../core/colors.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { h } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
 import { showToast } from '../ui/toast.js';
-import { accentFor, resolveTheme } from '../ui/theme.js';
+import { currentAppearance } from '../ui/theme.js';
+import { makeChange, reportError, undoLast } from '../ui/changes.js';
 import { renderBackgroundSection } from './profile-background.js';
 
 export function renderProfile(ctx) {
@@ -16,16 +18,7 @@ export function renderProfile(ctx) {
   const settings = store.get('settings');
   const meta = store.get('meta');
 
-  async function change(label, collections, mutate) {
-    try {
-      const entry = await store.transact(label, collections, mutate);
-      if (entry) {
-        showToast(label, { actionLabel: 'Rückgängig', onAction: () => undoLast(ctx) });
-      }
-    } catch (err) {
-      reportError(err);
-    }
-  }
+  const change = makeChange(ctx);
 
   const setting = (label, key, value) => change(label, ['settings'], (d) => { d.settings[key] = value; });
 
@@ -36,12 +29,13 @@ export function renderProfile(ctx) {
     h('div', { class: 'section' },
       h('h2', { class: 'section__title' }, 'Darstellung'),
       h('div', { class: 'rows' },
-        row('Thema', segmented('theme', THEMES, settings.theme, (id, name) => setting(`Thema: ${name}`, 'theme', id))),
         row('Akzentfarbe', accentPicker(settings, setting)),
         row('Dichte', segmented('density', DENSITIES, settings.density, (id, name) => setting(`Dichte: ${name}`, 'density', id))),
         row('Schriftgröße', segmented('fontScale', FONT_SCALES, settings.fontScale, (id, name) => setting(`Schriftgröße: ${name}`, 'fontScale', id))))),
 
-    renderBackgroundSection({ store, change, reportError }),
+    renderBackgroundSection({
+      store, change, reportError, rerender: ctx.rerender,
+    }),
 
     h('div', { class: 'section' },
       h('h2', { class: 'section__title' }, 'Navigation'),
@@ -96,7 +90,7 @@ function segmented(group, options, current, onPick) {
 }
 
 function accentPicker(settings, setting) {
-  const theme = resolveTheme(settings.theme);
+  const theme = currentAppearance().scheme;
   const isCustom = settings.accent.startsWith('#');
   const customValue = isCustom ? settings.accent : '#A93818';
   return h('div', { class: 'swatches' },
@@ -148,19 +142,6 @@ function undoRow(store, ctx) {
     disabled: !last,
     onClick: () => undoLast(ctx),
   }, icon('undo', 20), last ? `Rückgängig: ${last.label}` : 'Nichts zum Rückgängigmachen');
-}
-
-export async function undoLast({ store }) {
-  try {
-    const entry = await store.undo();
-    if (entry) showToast(`Rückgängig gemacht: ${entry.label}`);
-  } catch (err) {
-    reportError(err);
-  }
-}
-
-function reportError(err) {
-  showToast(err.message || 'Das hat nicht geklappt.', { error: true });
 }
 
 function exportData(store, storage) {

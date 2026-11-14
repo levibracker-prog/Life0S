@@ -1,33 +1,173 @@
-// Profil, Abschnitt "Hintergrund": Papierfarbe (hell und dunkel getrennt),
-// Muster und eigenes Foto mit Abdunkeln. Änderungen laufen über `change`
-// aus profile.js, also über store.transact mit Rückgängig.
+// Profil, Abschnitt "Hintergrund": Verlauf (2 bis 4 frei wählbare Farben,
+// Typ, Winkel), Papier, Muster und eigenes Foto. Es gibt nur diese eine
+// Einstellung. Ob die App hell oder dunkel ist, folgt aus dem Verlauf
+// (core/appearance.js). Änderungen laufen über `change` (store.transact mit
+// Rückgängig); beim Ziehen gibt es nur eine Vorschau.
 
-import { DIM_MAX, DIM_MIN, PAPERS, PATTERNS } from '../config.js';
-import { paperColor } from '../core/colors.js';
+import {
+  DIM_MAX, DIM_MIN, GRADIENT_MAX_COLORS, GRADIENT_TYPES, PALETTE, PAPERS, PATTERNS,
+} from '../config.js';
+import { gradientCss, tintFor } from '../core/appearance.js';
+import { createColorPicker } from '../ui/colorpicker.js';
 import { h } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
 import { prepareBackgroundPhoto } from '../ui/image.js';
 import { showToast } from '../ui/toast.js';
-import { previewPaper } from '../ui/theme.js';
+import { applyAppearance, currentAppearance } from '../ui/theme.js';
 
 // Verhindert, dass ein zweites Foto startet, solange das erste noch verkleinert wird.
 let photoBusy = false;
+// Welche Verlaufsfarbe gerade im Farbwähler offen ist (überlebt das Neuzeichnen).
+let openIndex = null;
+// Genauer Farbton/Sättigung der offenen Farbe, damit Grautöne beim Neuzeichnen
+// nicht den Farbton verlieren.
+let hsvMemory = null;
 
-export function renderBackgroundSection({ store, change, reportError }) {
+const ratioText = (n) => n.toFixed(1).replace('.', ',');
+
+function noteText(result) {
+  const scheme = result.scheme === 'dark' ? 'Helle Schrift auf dunklem Grund' : 'Dunkle Schrift auf hellem Grund';
+  return `${scheme}, das folgt aus dem Verlauf. Papier ${Math.round(result.alpha * 100)} % deckend, kleinster Kontrast ${ratioText(result.ratioAfter)}:1.`;
+}
+
+function warningText(result) {
+  if (!result.warning) return '';
+  const { color, ratio } = result.worstBefore;
+  const fixes = [`Deckkraft des Papiers auf ${Math.round(result.alpha * 100)} % erhöht`];
+  if (result.tintAdjusted) fixes.push('Papierfarbe angepasst');
+  return `Warnung: An der Farbe ${color.toUpperCase()} läge der Kontrast bei ${ratioText(ratio)}:1, unter 4,5:1. LifeOS hat korrigiert: ${fixes.join(', ')}.`;
+}
+
+export function renderBackgroundSection({
+  store, change, reportError, rerender,
+}) {
   const settings = store.get('settings');
   const image = store.get('backgroundImage');
   const { background } = settings;
+  const { gradient } = background;
   const hasPhoto = image.dataUrl !== '';
+  const applied = currentAppearance();
 
   const setBackground = (label, patch) => change(label, ['settings'], (d) => {
     Object.assign(d.settings.background, patch);
+  });
+  const setGradient = (label, patch) => change(label, ['settings'], (d) => {
+    Object.assign(d.settings.background.gradient, patch);
+  });
+
+  const strip = h('div', { class: 'gradient-preview', role: 'img', 'aria-label': 'Vorschau des Verlaufs' });
+  const note = h('p', { class: 'row__hint' });
+  const warning = h('p', { class: 'notice', role: 'status' });
+
+  function show(result, previewGradient) {
+    strip.style.background = gradientCss(previewGradient);
+    note.textContent = noteText(result);
+    warning.textContent = warningText(result);
+    warning.hidden = !result.warning;
+  }
+  show(applied, gradient);
+
+  // Entwurf anzeigen, ohne zu speichern.
+  const previewGradientChange = (nextGradient) => {
+    const draft = { ...settings, background: { ...background, gradient: nextGradient } };
+    show(applyAppearance(draft, image), nextGradient);
+  };
+  const revertPreview = () => show(applyAppearance(settings, image), gradient);
+
+  const withColor = (index, hex) => ({
+    ...gradient, colors: gradient.colors.map((c, i) => (i === index ? hex.toLowerCase() : c)),
+  });
+
+  const chips = gradient.colors.map((color, index) => h('button', {
+    type: 'button',
+    class: 'color-chip',
+    'data-key': `gradient-color-${index}`,
+    'aria-expanded': String(openIndex === index),
+    'aria-label': `Farbe ${index + 1}: ${color.toUpperCase()}`,
+    onClick: () => {
+      openIndex = openIndex === index ? null : index;
+      hsvMemory = null;
+      rerender();
+    },
+  }, h('span', { class: 'color-chip__dot', style: `--swatch: ${color}` }), h('span', { class: 'num' }, color.toUpperCase())));
+
+  const addButton = gradient.colors.length < GRADIENT_MAX_COLORS && h('button', {
+    type: 'button',
+    class: 'color-chip color-chip--add',
+    'data-key': 'gradient-add',
+    onClick: () => {
+      const taken = gradient.colors.map((c) => c.toUpperCase());
+      const next = (PALETTE.find((p) => !taken.includes(p.color.toUpperCase())) ?? PALETTE[0]).color.toLowerCase();
+      openIndex = gradient.colors.length;
+      hsvMemory = null;
+      setGradient('Verlauf: Farbe hinzugefügt', { colors: [...gradient.colors, next] });
+    },
+  }, icon('plus', 18), 'Farbe');
+
+  let panel = null;
+  if (openIndex !== null && openIndex < gradient.colors.length) {
+    const index = openIndex;
+    const value = gradient.colors[index].toUpperCase();
+    const remembered = hsvMemory && hsvMemory.hex === value ? hsvMemory.hsv : undefined;
+    panel = h('div', { class: 'cp-panel' },
+      createColorPicker({
+        value,
+        hsv: remembered,
+        label: `Farbe ${index + 1}`,
+        onPreview: (hex) => previewGradientChange(withColor(index, hex)),
+        onCommit: (hex, hsv) => {
+          hsvMemory = { hex: hex.toUpperCase(), hsv };
+          const next = withColor(index, hex);
+          if (next.colors[index] === gradient.colors[index].toLowerCase()) { revertPreview(); return; }
+          setGradient(`Verlauf: Farbe ${index + 1}`, { colors: next.colors });
+        },
+      }),
+      gradient.colors.length > 1 && h('button', {
+        type: 'button',
+        class: 'button button--quiet',
+        onClick: () => {
+          openIndex = null;
+          setGradient('Verlauf: Farbe entfernt', { colors: gradient.colors.filter((_, i) => i !== index) });
+        },
+      }, icon('trash', 20), `Farbe ${index + 1} entfernen`));
+  }
+
+  const single = gradient.colors.length === 1;
+  const angleDisabled = single || gradient.type === 'radial';
+  const angleValue = h('span', { class: 'num', id: 'angle-value' }, `${gradient.angle}°`);
+  const angleSlider = h('input', {
+    type: 'range', class: 'slider', min: 0, max: 360, step: 1, value: gradient.angle,
+    'data-key': 'gradient-angle', 'aria-labelledby': 'angle-label', disabled: angleDisabled,
+    onInput: (event) => {
+      angleValue.textContent = `${event.target.value}°`;
+      previewGradientChange({ ...gradient, angle: Number(event.target.value) });
+    },
+    onChange: (event) => setGradient(`Verlauf: Winkel ${event.target.value}°`, { angle: Number(event.target.value) }),
   });
 
   return h('div', { class: 'section' },
     h('h2', { class: 'section__title' }, 'Hintergrund'),
     h('div', { class: 'rows' },
-      paperRow('Papier hell', 'light', settings, image, setBackground),
-      paperRow('Papier dunkel', 'dark', settings, image, setBackground),
+      h('div', { class: 'row row--stacked' },
+        h('div', {},
+          h('div', { class: 'row__label' }, 'Verlauf'),
+          h('div', { class: 'row__hint' }, single ? 'Eine Farbe ergibt eine einfarbige Fläche.' : 'Helle und dunkle Farben dürfen gemischt werden.')),
+        strip,
+        h('div', { class: 'chip-row' }, chips, addButton),
+        panel,
+        h('div', { class: 'segmented', role: 'group', 'aria-label': 'Verlaufstyp' },
+          GRADIENT_TYPES.map(({ id, name }) => h('button', {
+            type: 'button',
+            'data-key': `gradient-type-${id}`,
+            'aria-pressed': String(id === gradient.type),
+            disabled: single,
+            onClick: () => id !== gradient.type && setGradient(`Verlauf: ${name}`, { type: id }),
+          }, name))),
+        h('div', { class: 'slider-row' },
+          h('span', { id: 'angle-label' }, 'Winkel'), angleValue, angleSlider),
+        note,
+        warning),
+      paperRow(settings, background, applied, setBackground),
       h('div', { class: 'row row--stacked' },
         h('div', { class: 'row__label' }, 'Muster'),
         h('div', { class: 'segmented', role: 'group', 'aria-label': 'Muster' },
@@ -40,35 +180,32 @@ export function renderBackgroundSection({ store, change, reportError }) {
       photoRow({ image, hasPhoto, background, setBackground, change, reportError })));
 }
 
-function paperRow(label, theme, settings, image, setBackground) {
-  const key = theme === 'light' ? 'paperLight' : 'paperDark';
-  const current = settings.background[key];
+function paperRow(settings, background, applied, setBackground) {
+  const current = background.paper;
   const isCustom = current.startsWith('#');
-  const adjusted = previewPaper(settings, image, theme).adjusted;
-  const customStart = isCustom ? current : PAPERS[theme][0].color;
-
-  const pick = (value, name) => setBackground(`${label}: ${name}`, { [key]: value });
-
+  const scheme = applied.scheme;
+  const pick = (value, name) => setBackground(`Papier: ${name}`, { paper: value });
   return h('div', { class: 'row row--stacked' },
     h('div', {},
-      h('div', { class: 'row__label' }, label),
-      adjusted && h('div', { class: 'row__hint' }, 'Für gute Lesbarkeit leicht angepasst.')),
+      h('div', { class: 'row__label' }, 'Papier'),
+      h('div', { class: 'row__hint' }, 'Die Fläche unter Karten und Inhalt. Die Helligkeit passt sich dem Verlauf an.'),
+      applied.tintAdjusted && h('div', { class: 'row__hint' }, 'Für gute Lesbarkeit leicht angepasst.')),
     h('div', { class: 'swatches' },
-      PAPERS[theme].map((entry) => h('button', {
+      PAPERS.map((entry) => h('button', {
         type: 'button',
         class: 'swatch swatch--paper',
-        style: `--swatch: ${entry.color}`,
-        'data-key': `${key}-${entry.id}`,
-        'aria-label': `${label}: ${entry.name}`,
+        style: `--swatch: ${tintFor(entry.id, scheme)}`,
+        'data-key': `paper-${entry.id}`,
+        'aria-label': `Papier: ${entry.name}`,
         'aria-pressed': String(current === entry.id),
         onClick: () => current !== entry.id && pick(entry.id, entry.name),
       })),
       h('label', { class: 'swatch swatch--custom', 'aria-pressed': String(isCustom) },
-        h('span', { class: 'visually-hidden' }, `${label}: eigene Farbe wählen`),
+        h('span', { class: 'visually-hidden' }, 'Papier: eigene Farbe wählen'),
         h('input', {
           type: 'color',
-          value: paperColor(customStart, theme).toLowerCase(),
-          'data-key': `${key}-custom`,
+          value: (isCustom ? current : tintFor('standard', scheme)).toLowerCase(),
+          'data-key': 'paper-custom',
           onChange: (event) => pick(event.target.value.toLowerCase(), 'eigene Farbe'),
         }))));
 }
@@ -132,7 +269,7 @@ function photoRow({
     h('div', {},
       h('div', { class: 'row__label' }, 'Eigenes Foto'),
       h('div', { class: 'row__hint' }, hasPhoto
-        ? `Gespeichert als JPEG, ${image.width} × ${image.height} px. Der Inhalt liegt auf einem Blatt, damit Text lesbar bleibt.`
+        ? `Gespeichert als JPEG, ${image.width} × ${image.height} px. Das Foto ersetzt den Verlauf, hell oder dunkel folgt weiter dem Verlauf.`
         : 'Wird beim Hochladen auf höchstens 1600 px verkleinert und bleibt auf diesem Gerät.')),
     input,
     hasPhoto && h('img', {

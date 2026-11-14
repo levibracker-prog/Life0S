@@ -1,7 +1,7 @@
 // Konstanten und Standardwerte. Alles, was sich ohne Logikänderung
 // anpassen lässt, steht hier und nirgends sonst.
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const STORAGE_PREFIX = 'lifeos:';
 export const UNDO_LIMIT = 20;
 export const BACKUP_LIMIT = 3;
@@ -13,7 +13,7 @@ export const UNDO_BYTES_LIMIT = 1_500_000;
 
 // Hintergrundfoto: wird beim Hochladen verkleinert und als JPEG gespeichert.
 export const IMAGE_MAX_SIDE = 1600;
-export const IMAGE_FALLBACK_SIDES = [1600, 1280, 1024];
+export const IMAGE_FALLBACK_SIDES = [IMAGE_MAX_SIDE, 1280, 1024];
 export const IMAGE_QUALITIES = [0.82, 0.72, 0.62, 0.52];
 export const IMAGE_MAX_BYTES = 600_000;
 export const IMAGE_MAX_DATAURL_CHARS = 820_000;
@@ -31,24 +31,49 @@ export const ACCENTS = [
   { id: 'schiefer', name: 'Schiefer', light: '#3A5559', dark: '#8DB5BA' },
 ];
 
-// Papierfarben je Theme. "standard" nimmt die Werte aus css/style.css.
-export const PAPERS = {
-  light: [
-    { id: 'standard', name: 'Papier', color: '#F5F1E8' },
-    { id: 'weiss', name: 'Weiß', color: '#FBFAF7' },
-    { id: 'creme', name: 'Creme', color: '#F6EDD6' },
-    { id: 'salbei', name: 'Salbei', color: '#E7EDE0' },
-    { id: 'nebel', name: 'Nebel', color: '#E6EBEF' },
-    { id: 'rose', name: 'Rosé', color: '#F3E4DE' },
-  ],
-  dark: [
-    { id: 'standard', name: 'Tinte', color: '#15140F' },
-    { id: 'schiefer', name: 'Schiefer', color: '#181D22' },
-    { id: 'tanne', name: 'Tanne', color: '#131A15' },
-    { id: 'aubergine', name: 'Aubergine', color: '#1B151B' },
-    { id: 'kohle', name: 'Kohle', color: '#0C0C0B' },
-  ],
-};
+// Papier ist die Fläche unter Karten und Inhalt. Die Farbe ist eine Tönung:
+// LifeOS passt ihre Helligkeit an das Schema (hell oder dunkel) an, das aus
+// dem Verlauf folgt, und behält Farbton und Sättigung. "standard" ist je
+// Schema das mitgelieferte Papier bzw. die mitgelieferte Tinte.
+export const PAPERS = [
+  { id: 'standard', name: 'Standard', color: '#F5F1E8' },
+  { id: 'weiss', name: 'Weiß', color: '#FBFAF7' },
+  { id: 'creme', name: 'Creme', color: '#F6EDD6' },
+  { id: 'salbei', name: 'Salbei', color: '#E7EDE0' },
+  { id: 'nebel', name: 'Nebel', color: '#E6EBEF' },
+  { id: 'rose', name: 'Rosé', color: '#F3E4DE' },
+  { id: 'schiefer', name: 'Schiefer', color: '#181D22' },
+  { id: 'aubergine', name: 'Aubergine', color: '#1B151B' },
+];
+export const STANDARD_PAPER = { light: '#F5F1E8', dark: '#15140F' };
+
+// Schnellauswahl im Farbwähler.
+export const PALETTE = [
+  { name: 'Papier', color: '#F5F1E8' },
+  { name: 'Weiß', color: '#FFFFFF' },
+  { name: 'Hellgrau', color: '#D9D9D9' },
+  { name: 'Grau', color: '#808080' },
+  { name: 'Anthrazit', color: '#2B2B2B' },
+  { name: 'Schwarz', color: '#111111' },
+  { name: 'Rot', color: '#D64545' },
+  { name: 'Orange', color: '#E8833A' },
+  { name: 'Gelb', color: '#F2C94C' },
+  { name: 'Grün', color: '#4F9D69' },
+  { name: 'Türkis', color: '#2FA4A9' },
+  { name: 'Blau', color: '#3B6FD1' },
+  { name: 'Dunkelblau', color: '#1B2A5C' },
+  { name: 'Violett', color: '#7B4FD1' },
+  { name: 'Pink', color: '#E56BA8' },
+  { name: 'Braun', color: '#8B5E3C' },
+];
+
+export const GRADIENT_TYPES = [
+  { id: 'linear', name: 'Linear' },
+  { id: 'radial', name: 'Radial' },
+];
+export const GRADIENT_MIN_COLORS = 1;
+export const GRADIENT_MAX_COLORS = 4;
+export const MAX_DESIGNS = 20;
 
 export const PATTERNS = [
   { id: 'plain', name: 'Blanko' },
@@ -69,15 +94,11 @@ export const PATTERN_SHARE_BY_PATTERN = {
   lined: PATTERN_SHARE,
   dots: PATTERN_SHARE,
 };
-export const SHEET_ALPHA = 0.96;
+// Grundwert der Deckkraft des Papiers über dem Verlauf. Reicht das für den
+// Kontrast nicht, erhöht LifeOS ihn automatisch (bis 100 %).
+export const SHEET_ALPHA = 0.9;
 export const DIM_MIN = 0;
 export const DIM_MAX = 80;
-
-export const THEMES = [
-  { id: 'system', name: 'System' },
-  { id: 'light', name: 'Hell' },
-  { id: 'dark', name: 'Dunkel' },
-];
 
 export const DENSITIES = [
   { id: 'normal', name: 'Normal' },
@@ -106,8 +127,8 @@ export const AGE_GROUPS = ['unset', 'minor', 'adult'];
 
 export function defaultBackground() {
   return {
-    paperLight: 'standard',
-    paperDark: 'standard',
+    gradient: { type: 'linear', angle: 160, colors: [STANDARD_PAPER.light] },
+    paper: 'standard',
     pattern: 'plain',
     usePhoto: false,
     dim: 35,
@@ -123,8 +144,7 @@ export function defaultCollections(now = new Date()) {
       ageGroup: 'unset',
     },
     settings: {
-      v: 2,
-      theme: 'system',
+      v: 3,
       accent: 'terrakotta',
       density: 'normal',
       fontScale: 1,
@@ -134,6 +154,7 @@ export function defaultCollections(now = new Date()) {
       background: defaultBackground(),
     },
     backgroundImage: { v: 1, dataUrl: '', width: 0, height: 0 },
+    designs: [],
     dashboard: { v: 1, widgets: [] },
     undoLog: [],
   };

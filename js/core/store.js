@@ -57,7 +57,7 @@ export function createStore(storage) {
     return () => listeners.delete(fn);
   };
 
-  // transact('Thema: Dunkel', ['settings'], (draft) => { draft.settings.theme = 'dark'; })
+  // transact('Dichte: Kompakt', ['settings'], (draft) => { draft.settings.density = 'compact'; })
   // Gibt den Rückgängig-Eintrag zurück, oder null, wenn sich nichts geändert hat.
   async function transact(label, names, mutate, { undoable = true } = {}) {
     const draft = {};
