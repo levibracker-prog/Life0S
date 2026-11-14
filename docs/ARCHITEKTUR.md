@@ -341,3 +341,7 @@ Was an diesem Plan austauschbar wirken könnte: Bottom-Bar, Karten, Dark Mode gi
 	2.	Altersfrage im Onboarding (unter 18 oder ab 18) für den Schutz bei Ernährungsthemen. Einverstanden?
 	3.	Ein Server für Frontend und Backend (einfachstes Deployment). Einverstanden?
 	4.	Mini-Produkt zuerst (Schritte 2, 3, 4a, 6), danach die übrigen Module. Einverstanden?
+
+9. Nachtrag: Hintergrund (Schema 2)
+
+Neu in settings: background { paperLight, paperDark, pattern, usePhoto, dim }. Neu als Sammlung: backgroundImage { v, dataUrl, width, height } mit einem JPEG als Data-URL (höchstens 820.000 Zeichen). settings.v und schemaVersion stehen auf 2, die Migration 1 -> 2 in storage.js ergänzt Standardwerte. Das Foto liegt getrennt von settings, damit Einstellungsänderungen das Bild nicht neu schreiben. Das Rückgängig-Protokoll ist zusätzlich auf 1,5 Mio. Zeichen begrenzt, Backups lassen das Foto aus. Mit Foto liegt der Inhalt auf einem Blatt (96 % deckend), damit der Kontrast auf jedem Bild gilt.

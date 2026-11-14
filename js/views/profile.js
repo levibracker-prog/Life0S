@@ -9,6 +9,7 @@ import { h } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
 import { showToast } from '../ui/toast.js';
 import { accentFor, resolveTheme } from '../ui/theme.js';
+import { renderBackgroundSection } from './profile-background.js';
 
 export function renderProfile(ctx) {
   const { store, storage } = ctx;
@@ -39,6 +40,8 @@ export function renderProfile(ctx) {
         row('Akzentfarbe', accentPicker(settings, setting)),
         row('Dichte', segmented('density', DENSITIES, settings.density, (id, name) => setting(`Dichte: ${name}`, 'density', id))),
         row('Schriftgröße', segmented('fontScale', FONT_SCALES, settings.fontScale, (id, name) => setting(`Schriftgröße: ${name}`, 'fontScale', id))))),
+
+    renderBackgroundSection({ store, change, reportError }),
 
     h('div', { class: 'section' },
       h('h2', { class: 'section__title' }, 'Navigation'),
@@ -95,7 +98,7 @@ function segmented(group, options, current, onPick) {
 function accentPicker(settings, setting) {
   const theme = resolveTheme(settings.theme);
   const isCustom = settings.accent.startsWith('#');
-  const customValue = isCustom ? settings.accent : '#B63E1A';
+  const customValue = isCustom ? settings.accent : '#A93818';
   return h('div', { class: 'swatches' },
     ACCENTS.map((entry) => h('button', {
       type: 'button',
@@ -162,11 +165,7 @@ function reportError(err) {
 
 function exportData(store, storage) {
   try {
-    const text = storage.exportAll({
-      meta: store.get('meta'),
-      settings: store.get('settings'),
-      dashboard: store.get('dashboard'),
-    });
+    const text = storage.exportAll(store.snapshot());
     const day = new Date().toISOString().slice(0, 10);
     const link = h('a', {
       href: URL.createObjectURL(new Blob([text], { type: 'application/json' })),
@@ -210,11 +209,7 @@ async function importFile(file, { store, storage }) {
       danger: true,
     });
     if (!ok) return;
-    await storage.importAll({
-      meta: store.get('meta'),
-      settings: store.get('settings'),
-      dashboard: store.get('dashboard'),
-    }, imported);
+    await storage.importAll(store.snapshot(), imported);
     await store.reload();
     showToast('Import abgeschlossen.');
   } catch (err) {

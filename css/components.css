@@ -128,7 +128,7 @@
 }
 
 .swatch--custom::before {
-  background: conic-gradient(#B63E1A, #8A5F00, #46663A, #2F4A7A, #7A2F5E, #B63E1A);
+  background: conic-gradient(#A93818, #7D5600, #46663A, #2F4A7A, #7A2F5E, #A93818);
 }
 
 .swatch--custom input {
@@ -378,4 +378,38 @@ dialog.dialog[open] {
 .nav__item--agent[aria-current='page'] .nav__agent-disc {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+/* Hintergrund-Einstellungen */
+.swatch--paper::before {
+  border: 1px solid var(--line-strong);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.photo-preview {
+  width: 96px;
+  height: auto;
+  border-radius: var(--radius-input);
+  border: 1px solid var(--line-strong);
+  object-fit: cover;
+}
+
+.slider-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.slider {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: var(--touch);
+  accent-color: var(--accent);
 }

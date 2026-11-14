@@ -2,7 +2,9 @@
 // Schlüssel im Browser: lifeos:<sammlung>. Die Schnittstelle ist async,
 // damit der Wechsel auf IndexedDB später keine Aufrufer anfasst.
 
-import { BACKUP_LIMIT, SCHEMA_VERSION, STORAGE_PREFIX, defaultCollections } from '../config.js';
+import {
+  BACKUP_LIMIT, SCHEMA_VERSION, STORAGE_PREFIX, defaultBackground, defaultCollections,
+} from '../config.js';
 import { EXPORTED, SCHEMAS } from './schemas.js';
 import { validate } from './validate.js';
 
@@ -11,7 +13,14 @@ export class ImportError extends Error {}
 
 // Migrationsschritte: Schlüssel n macht aus Version n die Version n+1
 // und bekommt alle geladenen Sammlungen als Objekt.
-export const MIGRATIONS = {};
+export const MIGRATIONS = {
+  // 1 -> 2: Hintergrund-Einstellungen und Foto-Sammlung kommen dazu.
+  1(data) {
+    data.settings.background = defaultBackground();
+    data.settings.v = 2;
+    data.backgroundImage = data.backgroundImage ?? { v: 1, dataUrl: '', width: 0, height: 0 };
+  },
+};
 
 export function createStorage(
   backend = globalThis.localStorage,
@@ -50,9 +59,12 @@ export function createStorage(
 
   // Legt eine Kopie aller Sammlungen unter lifeos:backup:<zeit> ab
   // und behält nur die letzten BACKUP_LIMIT.
+  // Das Hintergrundfoto bleibt draußen: Drei Kopien davon würden den
+  // Browser-Speicher sprengen.
   function makeBackup(collections) {
     const stamp = new Date().toISOString();
-    writeRaw(`${STORAGE_PREFIX}backup:${stamp}`, JSON.stringify(collections));
+    const { backgroundImage, ...withoutImage } = collections;
+    writeRaw(`${STORAGE_PREFIX}backup:${stamp}`, JSON.stringify(withoutImage));
     const backups = allKeys().filter((k) => k.startsWith(`${STORAGE_PREFIX}backup:`)).sort();
     for (const old of backups.slice(0, Math.max(0, backups.length - BACKUP_LIMIT))) {
       backend.removeItem(old);
@@ -103,7 +115,7 @@ export function createStorage(
     return { data, problems };
   }
 
-  function migrate(data, problems) {
+  function migrate(data, problems, { backup = true } = {}) {
     const from = data.meta?.schemaVersion;
     if (!Number.isInteger(from) || from >= targetVersion) {
       if (Number.isInteger(from) && from > targetVersion) {
@@ -111,7 +123,7 @@ export function createStorage(
       }
       return;
     }
-    const backupStamp = makeBackup(data);
+    const backupStamp = backup ? makeBackup(data) : 'keines';
     const working = structuredClone(data);
     try {
       for (let version = from; version < targetVersion; version += 1) {
@@ -158,17 +170,28 @@ export function createStorage(
     if (!Number.isInteger(file.schemaVersion) || file.schemaVersion > targetVersion) {
       throw new ImportError('Die Datei stammt aus einer neueren Version von LifeOS.');
     }
+    // Ältere Exporte durchlaufen dieselbe Migration wie lokale Daten, deshalb
+    // wird erst migriert und dann gegen das aktuelle Schema geprüft.
+    const isOlder = file.schemaVersion < targetVersion;
+    const defaults = defaultCollections();
     const data = {};
     for (const name of EXPORTED) {
-      if (!(name in file.collections)) throw new ImportError(`In der Datei fehlt "${name}".`);
-      const errors = validate(file.collections[name], SCHEMAS[name], name);
-      if (errors.length) throw new ImportError(`Die Datei ist beschädigt: ${errors[0]}`);
-      data[name] = file.collections[name];
+      if (name in file.collections) data[name] = file.collections[name];
+      else if (isOlder && name === 'backgroundImage') data[name] = defaults[name];
+      else throw new ImportError(`In der Datei fehlt "${name}".`);
     }
-    // Ältere Exporte durchlaufen dieselbe Migration wie lokale Daten.
+    if (data.meta && typeof data.meta === 'object') data.meta.schemaVersion = file.schemaVersion;
     const problems = [];
-    migrate(data, problems);
+    try {
+      migrate(data, problems, { backup: false });
+    } catch (err) {
+      throw new ImportError(`Die Datei ist beschädigt: ${err.message}`);
+    }
     if (problems.length) throw new ImportError(problems[0]);
+    for (const name of EXPORTED) {
+      const errors = validate(data[name], SCHEMAS[name], name);
+      if (errors.length) throw new ImportError(`Die Datei ist beschädigt: ${errors[0]}`);
+    }
     return data;
   }
 

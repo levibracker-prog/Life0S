@@ -67,3 +67,19 @@
 .home__board {
   margin-top: var(--space-6);
 }
+
+/* Mit Foto liegt der Inhalt auf einem Blatt Papier, das das Bild nur
+   leicht durchscheinen lässt. So bleibt der Text auf jedem Foto lesbar
+   (Kontrast in tools/kontrast.mjs gemessen). Die leere Fläche daneben
+   zeigt das Foto. */
+:root[data-photo] .view {
+  margin:
+    calc(env(safe-area-inset-top) + var(--space-3))
+    var(--space-3)
+    calc(var(--nav-height) + env(safe-area-inset-bottom) + var(--space-3));
+  padding: var(--space-5) var(--space-4) var(--space-6);
+  border-radius: 16px;
+  background-color: color-mix(in srgb, var(--paper) var(--sheet-mix), transparent);
+  background-image: var(--pattern-image);
+  background-size: var(--pattern-size);
+}

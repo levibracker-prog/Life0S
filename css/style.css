@@ -24,9 +24,9 @@
   --ink-soft: #5E5A52;
   --line: #E2DCCD;
   --line-strong: #C9C1AE;
-  --accent: #B63E1A;
+  --accent: #A93818;
   --on-accent: #FFFFFF;
-  --ok: #3F6B43;
+  --ok: #37613A;
   --warn: #8A5F00;
   --bad: #A23131;
   --shadow: 0 1px 0 rgba(28, 27, 24, 0.06), 0 6px 18px -10px rgba(28, 27, 24, 0.25);
@@ -60,6 +60,30 @@
   --nav-height: 64px;
   --font-scale: 1;
   --density: 1;
+
+  /* Hintergrundmuster. Der Anteil 6 % steht auch in js/config.js (PATTERN_SHARE). */
+  --pattern-line: color-mix(in srgb, var(--ink) 6%, transparent);
+  --pattern-image: none;
+  --pattern-size: auto;
+  --sheet-mix: 96%;
+  --photo-dim: 0.35;
+}
+
+:root[data-pattern='grid'] {
+  --pattern-image:
+    linear-gradient(var(--pattern-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--pattern-line) 1px, transparent 1px);
+  --pattern-size: 24px 24px;
+}
+
+:root[data-pattern='lined'] {
+  --pattern-image: linear-gradient(var(--pattern-line) 1px, transparent 1px);
+  --pattern-size: 100% 28px;
+}
+
+:root[data-pattern='dots'] {
+  --pattern-image: radial-gradient(circle at 1px 1px, var(--pattern-line) 1.2px, transparent 1.6px);
+  --pattern-size: 20px 20px;
 }
 
 :root[data-theme='dark'] {
@@ -100,13 +124,40 @@ body {
   margin: 0;
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--paper);
+  background-color: var(--paper);
+  background-image: var(--pattern-image);
+  background-size: var(--pattern-size);
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: var(--text-md);
   line-height: 1.5;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
+}
+
+/* Foto: feste Ebene hinter der App, darüber eine Abdunklung. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-position: center;
+  background-size: cover;
+}
+
+.backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, var(--photo-dim));
+}
+
+:root:not([data-photo]) .backdrop {
+  display: none;
+}
+
+:root[data-photo] body {
+  background-image: none;
+  background-color: transparent;
 }
 
 h1,
